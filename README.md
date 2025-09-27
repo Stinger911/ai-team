@@ -11,7 +11,7 @@ This tool allows you to interact with different AI models (OpenAI, Gemini, and O
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/your-username/ai-team.git
+git clone https://github.com/Stinger911/ai-team.git
 ```
 
 2. Go to the project directory:
