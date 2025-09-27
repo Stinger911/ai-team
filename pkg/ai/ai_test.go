@@ -1,4 +1,4 @@
-package main
+package ai
 
 import (
 	"net/http"
@@ -16,14 +16,13 @@ func TestCallOpenAI(t *testing.T) {
 
 	client := server.Client()
 
-	resp, err := callOpenAI(client, "write a hello world program in Go", server.URL)
+	resp, err := CallOpenAI(client, "write a hello world program in Go", server.URL, "test_api_key")
 
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	expected := `{"choices": [{"text": "Hello, world!"}]}
-`
+	expected := "Hello, world!"
 	if resp != expected {
 		t.Errorf("expected response %q, got %q", expected, resp)
 	}
@@ -38,14 +37,13 @@ func TestCallGemini(t *testing.T) {
 
 	client := server.Client()
 
-	resp, err := callGemini(client, "write a hello world program in Go", server.URL)
+	resp, err := CallGemini(client, "write a hello world program in Go", server.URL, "test_api_key")
 
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	expected := `{"candidates": [{"content": {"parts": [{"text": "Hello, world!"}]}}]}
-`
+	expected := "Hello, world!"
 	if resp != expected {
 		t.Errorf("expected response %q, got %q", expected, resp)
 	}
@@ -60,14 +58,13 @@ func TestCallOllama(t *testing.T) {
 
 	client := server.Client()
 
-	resp, err := callOllama(client, "write a hello world program in Go", server.URL)
+	resp, err := CallOllama(client, "write a hello world program in Go", server.URL)
 
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	expected := `{"response": "Hello, world!"}
-`
+	expected := "Hello, world!"
 	if resp != expected {
 		t.Errorf("expected response %q, got %q", expected, resp)
 	}
