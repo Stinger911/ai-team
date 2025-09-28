@@ -1,2 +1,6 @@
 # Binaries
 ai-team
+
+# local ignores
+*.nogit.*
+*.log

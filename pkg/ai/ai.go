@@ -1,17 +1,32 @@
 package ai
 
 import (
+	"ai-team/pkg/errors"
+	"ai-team/pkg/tools"
+	"ai-team/pkg/types"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 
-	"ai-team/pkg/errors"
-	"ai-team/pkg/types"
+	"github.com/sirupsen/logrus"
 )
 
+// debugMode controls whether debug output is printed
+var debugMode = os.Getenv("AI_TEAM_DEBUG") == "1"
+
+func debugPrintf(format string, args ...interface{}) {
+	if debugMode {
+		logrus.Debugf("DEBUG: "+format, args...)
+	}
+}
+
 func CallOpenAI(client *http.Client, task string, apiURL string, apiKey string) (string, error) {
-	fmt.Println("Calling OpenAI API...")
+	logrus.Info("Calling OpenAI API...")
 
 	requestBody := strings.NewReader(`{
 		"model": "text-davinci-003",
@@ -45,18 +60,24 @@ func CallOpenAI(client *http.Client, task string, apiURL string, apiKey string) 
 	return "", errors.New(errors.ErrCodeAPI, "no response from openai", nil)
 }
 
-func CallGemini(client *http.Client, task string, apiURL string, apiKey string) (string, error) {
-	fmt.Println("Calling Gemini API...")
+func CallGemini(client *http.Client, task string, model string, apiURL string, apiKey string, configurableTools []types.ConfigurableTool) (string, error) {
+	logrus.Infof("Calling Gemini API with model: %s", model)
 
-	requestBody := strings.NewReader(`{
+	// Construct the full API URL with the model
+	fullAPIURL := fmt.Sprintf("%s/v1/models/%s:generateContent", apiURL, model)
+
+	// Escape the task string for JSON
+	escapedTask := strconv.Quote(task)
+
+	requestBody := strings.NewReader(fmt.Sprintf(`{
 		"contents": [{
 			"parts":[
-				{"text": "` + task + `"}
+				{"text": %s}
 			]
 		}]
-	}`)
+	}`, escapedTask))
 
-	req, err := http.NewRequest("POST", apiURL, requestBody)
+	req, err := http.NewRequest("POST", fullAPIURL, requestBody)
 	if err != nil {
 		return "", errors.New(errors.ErrCodeAPI, "failed to create gemini request", err)
 	}
@@ -70,20 +91,183 @@ func CallGemini(client *http.Client, task string, apiURL string, apiKey string) 
 	}
 	defer resp.Body.Close()
 
+	// Read the response body once to allow for multiple decodes
+	bodyBytes, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return "", errors.New(errors.ErrCodeAPI, "failed to read gemini response body", readErr)
+	}
+
+	// Check for API errors first (e.g., non-200 status code with error message)
+	if resp.StatusCode != http.StatusOK {
+		var apiError struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&apiError); err == nil && apiError.Error.Message != "" {
+			return "", errors.New(errors.ErrCodeAPI, fmt.Sprintf("Gemini API error: %s", apiError.Error.Message), nil)
+		}
+		return "", errors.New(errors.ErrCodeAPI, fmt.Sprintf("Gemini API returned status %d", resp.StatusCode), nil)
+	}
+
+	// Attempt to decode as a tool call
+	var toolCallReq types.ToolCallRequest
+	bodyString := string(bodyBytes)
+
+	// Debug: Log the raw response for troubleshooting
+	debugPrintf("Raw Gemini response: %s\n", bodyString)
+
+	// Try to extract JSON from a markdown code block with "tool_code" language specifier
+	toolCodeBlockPrefix := "```tool_code\n"
+	toolCodeBlockSuffix := "```"
+	if strings.HasPrefix(bodyString, toolCodeBlockPrefix) && strings.HasSuffix(bodyString, toolCodeBlockSuffix) {
+		jsonString := strings.TrimPrefix(bodyString, toolCodeBlockPrefix)
+		jsonString = strings.TrimSuffix(jsonString, toolCodeBlockSuffix)
+		bodyString = jsonString // Use the extracted JSON string for further processing
+		debugPrintf("Extracted tool_code JSON: %s\n", bodyString)
+	}
+
+	// Now, try to extract content between <__AI_AGENT_CONTENT__> tags
+	contentStartTag := "<__AI_AGENT_CONTENT__>"
+	contentEndTag := "<__AI_AGENT_CONTENT__>"
+	if strings.Contains(bodyString, contentStartTag) && strings.Contains(bodyString, contentEndTag) {
+		startIndex := strings.Index(bodyString, contentStartTag) + len(contentStartTag)
+		endIndex := strings.LastIndex(bodyString, contentEndTag)
+		if startIndex < endIndex {
+			extractedContent := bodyString[startIndex:endIndex]
+			debugPrintf("Extracted content between tags: %s\n", extractedContent)
+			// Now, try to unmarshal the extracted content as a tool call
+			if err := json.NewDecoder(bytes.NewReader([]byte(extractedContent))).Decode(&toolCallReq); err == nil && toolCallReq.ToolCall.Name != "" {
+				debugPrintf("Successfully parsed tool call from content tags: %s\n", toolCallReq.ToolCall.Name)
+				// It's a tool call!
+				toolOutput, toolErr := executeToolCall(toolCallReq.ToolCall, configurableTools)
+				if toolErr != nil {
+					return "", toolErr // Return the tool execution error
+				}
+				return toolOutput, nil // Return the tool's output
+			} else {
+				debugPrintf("Failed to parse tool call from content tags, error: %v\n", err)
+			}
+		}
+	}
+
+	// If not a tool call in a markdown block or between content tags, try direct JSON decode
+	if err := json.NewDecoder(bytes.NewReader([]byte(bodyString))).Decode(&toolCallReq); err == nil && toolCallReq.ToolCall.Name != "" {
+		debugPrintf("Successfully parsed tool call from direct JSON: %s\n", toolCallReq.ToolCall.Name)
+		// It's a tool call!
+		toolOutput, toolErr := executeToolCall(toolCallReq.ToolCall, configurableTools)
+		if toolErr != nil {
+			return "", toolErr // Return the tool execution error
+		}
+		return toolOutput, nil // Return the tool's output
+	} else {
+		debugPrintf("Failed to parse tool call from direct JSON, error: %v\n", err)
+	}
+
+	// If not a tool call, attempt to decode as a regular Gemini response
 	var geminiResp types.GeminiResponse
-	if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err != nil {
-		return "", errors.New(errors.ErrCodeAPI, "failed to decode gemini response", err)
+	if err := json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&geminiResp); err == nil {
+		if len(geminiResp.Candidates) > 0 {
+			candidate := geminiResp.Candidates[0]
+			// Handle UNEXPECTED_TOOL_CALL
+			if candidate.FinishReason == "UNEXPECTED_TOOL_CALL" && candidate.ToolCall != nil {
+				debugPrintf("Gemini returned UNEXPECTED_TOOL_CALL, executing tool: %s\n", candidate.ToolCall.Name)
+				toolOutput, toolErr := executeToolCall(*candidate.ToolCall, configurableTools)
+				if toolErr != nil {
+					return "", toolErr
+				}
+				return toolOutput, nil
+			}
+			// Normal text response
+			if len(candidate.Content.Parts) > 0 {
+				return candidate.Content.Parts[0].Text, nil
+			}
+		}
+		return "", errors.New(errors.ErrCodeAPI, "no content in Gemini response", nil)
 	}
 
-	if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
-		return geminiResp.Candidates[0].Content.Parts[0].Text, nil
+	return "", errors.New(errors.ErrCodeAPI, "malformed Gemini response or unrecognized format", nil)
+}
+
+var (
+	// For testing purposes, these can be overridden
+	WriteFileFunc  = tools.WriteFile
+	RunCommandFunc = tools.RunCommand
+	ApplyPatchFunc = tools.ApplyPatch
+)
+
+// executeToolCall executes the requested tool and returns its output.
+func executeToolCall(tc types.ToolCall, configurableTools []types.ConfigurableTool) (string, error) {
+	debugPrintf("Executing tool call: %s with args: %v\n", tc.Name, tc.Arguments)
+
+	// Check for hardcoded tools first
+	switch tc.Name {
+	case "write_file":
+		filePath, ok := tc.Arguments["file_path"].(string)
+		if !ok {
+			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'file_path' for write_file", nil)
+		}
+		content, ok := tc.Arguments["content"].(string)
+		if !ok {
+			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'content' for write_file", nil)
+		}
+		debugPrintf("Calling WriteFileFunc with filePath: %s, content length: %d\n", filePath, len(content)) // Debug print
+		result, err := WriteFileFunc(filePath, content)
+		if err != nil {
+			debugPrintf("WriteFileFunc failed: %v\n", err)
+			return "", err
+		}
+		debugPrintf("WriteFileFunc succeeded: %s\n", result)
+		return result, nil
+	case "run_command":
+		command, ok := tc.Arguments["command"].(string)
+		if !ok {
+			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'command' for run_command", nil)
+		}
+		debugPrintf("Calling RunCommandFunc with command: %s\n", command) // Debug print
+		return RunCommandFunc(command)
+	case "apply_patch":
+		filePath, ok := tc.Arguments["file_path"].(string)
+		if !ok {
+			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'file_path' for apply_patch", nil)
+		}
+		patchContent, ok := tc.Arguments["patch_content"].(string)
+		if !ok {
+			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'patch_content' for apply_patch", nil)
+		}
+		debugPrintf("Calling ApplyPatchFunc with filePath: %s, patchContent length: %d\n", filePath, len(patchContent)) // Debug print
+		return ApplyPatchFunc(filePath, patchContent)
 	}
 
-	return "", errors.New(errors.ErrCodeAPI, "no response from gemini", nil)
+	// Check for configurable tools
+	for _, ct := range configurableTools {
+		if ct.Name == tc.Name {
+			debugPrintf("Using configurable tool: %s\n", ct.Name)
+			// Construct the command from the template
+			command := ct.CommandTemplate
+			for _, arg := range ct.Arguments {
+				if val, ok := tc.Arguments[arg.Name].(string); ok {
+					command = strings.ReplaceAll(command, fmt.Sprintf("{{.%s}}", arg.Name), val)
+				} else {
+					return "", errors.New(errors.ErrCodeTool, fmt.Sprintf("missing or invalid argument '%s' for configurable tool '%s'", arg.Name, ct.Name), nil)
+				}
+			}
+			debugPrintf("Executing configurable tool command: %s\n", command)
+			result, err := RunCommandFunc(command)
+			if err != nil {
+				debugPrintf("Configurable tool failed: %v\n", err)
+				return "", err
+			}
+			debugPrintf("Configurable tool succeeded: %s\n", result)
+			return result, nil
+		}
+	}
+
+	return "", errors.New(errors.ErrCodeTool, fmt.Sprintf("unknown tool: %s", tc.Name), nil)
 }
 
 func CallOllama(client *http.Client, task string, apiURL string) (string, error) {
-	fmt.Println("Calling Ollama API...")
+	logrus.Info("Calling Ollama API...")
 
 	requestBody := strings.NewReader(`{
 		"model": "llama2",
@@ -109,4 +293,36 @@ func CallOllama(client *http.Client, task string, apiURL string) (string, error)
 	}
 
 	return ollamaResp.Response, nil
+}
+
+// ListGeminiModels lists available Gemini models.
+func ListGeminiModels(client *http.Client, apiURL string, apiKey string) ([]string, error) {
+	logrus.Info("Listing Gemini models...")
+
+	fullAPIURL := fmt.Sprintf("%s/v1/models", apiURL)
+
+	req, err := http.NewRequest("GET", fullAPIURL, nil)
+	if err != nil {
+		return nil, errors.New(errors.ErrCodeAPI, "failed to create gemini list models request", err)
+	}
+
+	req.URL.RawQuery = "key=" + apiKey
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, errors.New(errors.ErrCodeAPI, "failed to send gemini list models request", err)
+	}
+	defer resp.Body.Close()
+
+	var modelListResp types.GeminiModelListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&modelListResp); err != nil {
+		return nil, errors.New(errors.ErrCodeAPI, "failed to decode gemini list models response", err)
+	}
+
+	var models []string
+	for _, model := range modelListResp.Models {
+		models = append(models, model.Name)
+	}
+
+	return models, nil
 }

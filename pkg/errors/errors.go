@@ -33,4 +33,8 @@ const (
 	ErrCodeConfig
 	// ErrCodeAPI is the error code for API errors.
 	ErrCodeAPI
+	// ErrCodeTool is the error code for tool execution errors.
+	ErrCodeTool
+	// ErrCodeRole is the error code for role execution errors.
+	ErrCodeRole
 )

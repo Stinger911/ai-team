@@ -16,7 +16,7 @@ var ollamaCmd = &cobra.Command{
 		client := &http.Client{}
 		response, err := ai.CallOllama(client, task, cfg.Ollama.APIURL)
 		if err != nil {
-			handleError(err)
+			HandleError(err) // Use HandleError
 		}
 		fmt.Println("Response:", response)
 	},

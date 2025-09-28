@@ -16,7 +16,7 @@ var openaiCmd = &cobra.Command{
 		client := &http.Client{}
 		response, err := ai.CallOpenAI(client, task, cfg.OpenAI.APIURL, cfg.OpenAI.APIKey)
 		if err != nil {
-			handleError(err)
+			HandleError(err) // Use HandleError
 		}
 		fmt.Println("Response:", response)
 	},
