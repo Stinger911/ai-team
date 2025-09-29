@@ -52,6 +52,14 @@ You can execute predefined chains of AI roles, and the system will automatically
 ./ai-team run-chain design-code-test --input "initial_problem=Create a calculator function"
 ```
 
+### Running a Single Role
+
+You can run a single role directly (without a chain):
+
+```bash
+./ai-team role coder --input "design=your design here"
+```
+
 **How it works:**
 
 - If the AI model returns a JSON object with a top-level `tool_call` (e.g., `{ "tool_call": { "name": "write_file", "arguments": { "file_path": "design.md", "content": "..." }}}`), the file will be written automatically.
@@ -76,7 +84,22 @@ If you see warnings such as `file_path is empty, skipping file write`, check tha
 
 ## Configuration
 
-The tool uses a `config.yaml` file to configure the API keys and URLs for the different AI models. You can find an example `config.yaml` file in the repository.
+The tool uses a `config.yaml` file to configure the API keys, URLs, roles, chains, and logging. Example keys:
+
+```yaml
+LogFilePath: "ai-team.log"
+LogStdout: true  # Set to false to log only to file
+Gemini:
+	APIKey: "..."
+	APIURL: "..."
+	Model: "gemini-2.5-flash"
+Roles:
+	- Name: "architect"
+		...
+Chains:
+	- Name: "design-code-test"
+		...
+```
 
 ## Development
 
@@ -85,6 +108,9 @@ The tool uses a `config.yaml` file to configure the API keys and URLs for the di
 ```bash
 make test
 ```
+
+- Unit tests mock all AI calls and do not require network or API keys.
+- Integration tests (CLI) are skipped if the `ai-team` binary is not present.
 
 ### Building the binary
 

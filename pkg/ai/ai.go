@@ -16,6 +16,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// CallGeminiFunc allows mocking of CallGemini in tests
+var CallGeminiFunc = CallGemini
+
 // debugMode controls whether debug output is printed
 var debugMode = os.Getenv("AI_TEAM_DEBUG") == "1"
 

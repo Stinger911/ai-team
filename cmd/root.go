@@ -14,6 +14,62 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var runRoleCmd = &cobra.Command{
+	Use:   "role <role-name>",
+	Short: "Run a single AI role by name.",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		roleName := args[0]
+		inputStr, _ := cmd.Flags().GetString("input")
+
+		// Find the specified role
+		var targetRole types.Role
+		foundRole := false
+		for _, role := range cfg.Roles {
+			if role.Name == roleName {
+				targetRole = role
+				foundRole = true
+				break
+			}
+		}
+		if !foundRole {
+			HandleError(errors.New(errors.ErrCodeRole, fmt.Sprintf("role '%s' not found in config", roleName), nil))
+		}
+
+		// Parse input string into a map
+		roleInput := make(map[string]interface{})
+		if inputStr != "" {
+			parts := strings.Split(inputStr, "=")
+			if len(parts) == 2 {
+				roleInput[parts[0]] = parts[1]
+			} else {
+				HandleError(errors.New(errors.ErrCodeRole, "invalid input format. Expected key=value", nil))
+			}
+		}
+
+		// Prefer flag over config
+		logFilePath := logFileFlag
+		if logFilePath == "" {
+			logFilePath = cfg.LogFilePath
+		}
+
+		output, err := roles.ExecuteRole(
+			targetRole,
+			roleInput,
+			cfg.Gemini.APIURL,
+			cfg.Gemini.APIKey,
+			cfg.Tools,
+			logFilePath,
+		)
+		if err != nil {
+			HandleError(err)
+		}
+
+		logrus.Info("Role execution complete. Output:")
+		logrus.Infof("%s", output)
+	},
+}
+
 var cfgFile string
 var logFileFlag string
 var cfg config.Config
@@ -119,7 +175,10 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.ai-team.yaml)")
 	runChainCmd.Flags().String("input", "", "Initial input for the chain (e.g., 'problem=design a new feature')")
 	runChainCmd.Flags().StringVar(&logFileFlag, "logFile", "", "Path to a file to log role calls (e.g., 'role_calls.log') (flag takes precedence over config)")
+	runRoleCmd.Flags().String("input", "", "Input for the role (e.g., 'problem=design a new feature')")
+	runRoleCmd.Flags().StringVar(&logFileFlag, "logFile", "", "Path to a file to log role calls (e.g., 'role_calls.log') (flag takes precedence over config)")
 	rootCmd.AddCommand(runChainCmd)
+	rootCmd.AddCommand(runRoleCmd)
 }
 
 func ExecuteCmd() { // Renamed to ExecuteCmd

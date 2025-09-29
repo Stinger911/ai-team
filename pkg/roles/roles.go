@@ -64,7 +64,7 @@ func ExecuteRole(
 	// Currently only Gemini is supported for roles
 	// (Future: Add cases for OpenAI, Ollama, etc.)
 	client := &http.Client{}
-	response, roleErr = ai.CallGemini(
+	response, roleErr = ai.CallGeminiFunc(
 		client,
 		processedPrompt.String(),
 		role.Model, // Use the model specified in the role
