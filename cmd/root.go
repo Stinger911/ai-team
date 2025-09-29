@@ -6,6 +6,7 @@ import (
 	"ai-team/pkg/roles"
 	"ai-team/pkg/types"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -25,6 +26,26 @@ var rootCmd = &cobra.Command{
 		cfg, err = config.LoadConfig(cfgFile)
 		if err != nil {
 			HandleError(err)
+		}
+
+		// Determine log file path (flag takes precedence)
+		logFilePath := logFileFlag
+		if logFilePath == "" {
+			logFilePath = cfg.LogFilePath
+		}
+		if logFilePath != "" {
+			// Open log file for append
+			logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to open log file %s: %v\n", logFilePath, err)
+				os.Exit(1)
+			}
+			// Multi-writer: file + stdout if LogStdout is true
+			if cfg.LogStdout {
+				logrus.SetOutput(io.MultiWriter(os.Stdout, logFile))
+			} else {
+				logrus.SetOutput(logFile)
+			}
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {

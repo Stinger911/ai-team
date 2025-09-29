@@ -22,6 +22,7 @@ type Config struct {
 		APIURL string `mapstructure:"APIURL"`
 	}
 	LogFilePath string                   `mapstructure:"LogFilePath"`
+	LogStdout   bool                     `mapstructure:"LogStdout"`
 	Tools       []types.ConfigurableTool `mapstructure:"Tools"`
 	Roles       []types.Role             `mapstructure:"Roles"`
 	Chains      []types.RoleChain        `mapstructure:"Chains"`
@@ -47,6 +48,9 @@ func LoadConfig(configPath string) (Config, error) {
 	if err := viper.Unmarshal(&config); err != nil {
 		return Config{}, errors.New(errors.ErrCodeConfig, "failed to unmarshal config", err)
 	}
-
+	// Default LogStdout to true if not set
+	if !viper.IsSet("LogStdout") {
+		config.LogStdout = true
+	}
 	return config, nil
 }
