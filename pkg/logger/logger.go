@@ -7,7 +7,25 @@ import (
 	"time"
 
 	"ai-team/pkg/types"
+
+	"github.com/sirupsen/logrus"
 )
+
+// SetLogLevelFromEnv sets logrus log level globally based on AI_TEAM_DEBUG env var.
+func SetLogLevelFromEnv() {
+	if os.Getenv("AI_TEAM_DEBUG") == "1" {
+		logrus.SetLevel(logrus.DebugLevel)
+	} else {
+		logrus.SetLevel(logrus.InfoLevel)
+	}
+}
+
+// DebugPrintf prints debug logs if logrus is in debug mode.
+func DebugPrintf(format string, args ...interface{}) {
+	if logrus.IsLevelEnabled(logrus.DebugLevel) {
+		logrus.Debugf("DEBUG: "+format, args...)
+	}
+}
 
 // LogRoleCall appends a role call log entry to a specified log file.
 func LogRoleCall(logFilePath string, entry types.RoleCallLogEntry) error {

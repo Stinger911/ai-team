@@ -7,15 +7,26 @@ type OpenAIResponse struct {
 	} `json:"choices"`
 }
 
+// GeminiRequest represents the request body for Gemini API.
+type GeminiRequest struct {
+	Contents []GeminiContent `json:"contents"`
+}
+
+// GeminiContent represents a content block for Gemini API.
+type GeminiContent struct {
+	Parts []GeminiPart `json:"parts"`
+}
+
+// GeminiPart represents a part of the content for Gemini API.
+type GeminiPart struct {
+	Text string `json:"text"`
+}
+
 // GeminiResponse represents the JSON response from the Gemini API.
 type GeminiResponse struct {
 	Candidates []struct {
-		Content struct {
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-		} `json:"content"`
-		FinishReason string `json:"finishReason"`
+		Content      GeminiContent `json:"content"`
+		FinishReason string        `json:"finishReason"`
 		// Tool call payloads may be present in Gemini tool call responses
 		ToolCall *ToolCall `json:"toolCall,omitempty"`
 	} `json:"candidates"`
@@ -24,6 +35,14 @@ type GeminiResponse struct {
 // OllamaResponse represents the JSON response from the Ollama API.
 type OllamaResponse struct {
 	Response string `json:"response"`
+}
+
+type OllamaRequest struct {
+	Model    string `json:"model"`
+	Messages []struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	} `json:"messages"`
 }
 
 // GeminiModelListResponse represents the JSON response from the Gemini models API.
@@ -68,9 +87,12 @@ type Role struct {
 
 // ChainRole represents a role within a chain.
 type ChainRole struct {
-	Name      string                 `mapstructure:"Name"`
-	Input     map[string]interface{} `mapstructure:"Input"`
-	OutputKey string                 `mapstructure:"OutputKey"`
+	Name          string                 `mapstructure:"Name"`
+	Input         map[string]interface{} `mapstructure:"Input"`
+	OutputKey     string                 `mapstructure:"OutputKey"`
+	Loop          bool                   `mapstructure:"Loop"`          // If true, loop this role
+	LoopCount     int                    `mapstructure:"LoopCount"`     // Number of times to loop (if Loop is true)
+	LoopCondition string                 `mapstructure:"LoopCondition"` // Optional: loop until a condition is met (Go template, evaluated after each iteration)
 }
 
 // RoleChain represents a chain of AI roles defined in the configuration.

@@ -28,6 +28,7 @@ Roles:
   - Name: "tester"
     Model: "gemini-pro"
     Prompt: "You are a tester. Review the following code: {{.code}} and provide test cases. Output your test cases as a tool call to 'write_file'. The 'file_path' argument should be 'test_cases.md'. The 'content' argument should be your test cases in markdown, enclosed within <__AI_AGENT_CONTENT__> and <__AI_AGENT_CONTENT__> tags. Example: {\"tool_call\": {\"name\": \"write_file\", \"arguments\": {\"file_path\": \"test_cases.md\", \"content\": \"<__AI_AGENT_CONTENT__>## Test Cases...\n<__AI_AGENT_CONTENT__>\"}}}"
+
 Chains:
   - Name: "design-code-test"
     Roles:
@@ -43,3 +44,23 @@ Chains:
         Input:
           code: "{{.code}}"
         OutputKey: "test_cases"
+
+  # Example: Looping over a role to list a directory multiple times
+  - Name: "list-dir-loop"
+    Roles:
+      - Name: "list_dir_role"
+        Input:
+          path: "{{.target_path}}"
+        OutputKey: "dir_listing"
+        Loop: true
+        LoopCount: 3
+
+  # Example: Looping over a role to read multiple files (AI must be prompted to use read_file tool)
+  - Name: "read-multi-files"
+    Roles:
+      - Name: "read_file_role"
+        Input:
+          file_path: "{{.file_path}}"
+        OutputKey: "file_content"
+        Loop: true
+        LoopCount: 2

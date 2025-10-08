@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/sirupsen/logrus"
+
 	"ai-team/pkg/errors"
 )
 
@@ -13,9 +15,9 @@ import (
 func WriteFile(filePath string, content string) (string, error) {
 	absPath, absErr := os.Getwd()
 	if absErr == nil {
-		fmt.Printf("[WriteFile] Current working directory: %s\n", absPath)
+		logrus.Debugf("[WriteFile] Current working directory: %s", absPath)
 	}
-	fmt.Printf("[WriteFile] Attempting to write file: %s\n", filePath)
+	logrus.Infof("[WriteFile] Attempting to write file: %s", filePath)
 
 	// Ensure parent directory exists
 	dir := filePath
@@ -23,7 +25,7 @@ func WriteFile(filePath string, content string) (string, error) {
 		dir = filePath[:idx]
 		if dir != "" {
 			if mkErr := os.MkdirAll(dir, 0755); mkErr != nil {
-				fmt.Printf("[WriteFile] Failed to create parent directory %s: %v\n", dir, mkErr)
+				logrus.Errorf("[WriteFile] Failed to create parent directory %s: %v", dir, mkErr)
 				return "", errors.New(errors.ErrCodeTool, fmt.Sprintf("failed to create parent directory %s", dir), mkErr)
 			}
 		}
@@ -31,10 +33,10 @@ func WriteFile(filePath string, content string) (string, error) {
 
 	err := os.WriteFile(filePath, []byte(content), 0644)
 	if err != nil {
-		fmt.Printf("[WriteFile] Failed to write file %s: %v\n", filePath, err)
+		logrus.Errorf("[WriteFile] Failed to write file %s: %v", filePath, err)
 		return "", errors.New(errors.ErrCodeTool, fmt.Sprintf("failed to write file %s", filePath), err)
 	}
-	fmt.Printf("[WriteFile] Successfully wrote to file: %s\n", filePath)
+	logrus.Infof("[WriteFile] Successfully wrote to file: %s %d bytes", filePath, len(content))
 	return fmt.Sprintf("Successfully wrote to file: %s", filePath), nil
 }
 

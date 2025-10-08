@@ -9,24 +9,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"strconv"
 	"strings"
+
+	"ai-team/pkg/logger"
 
 	"github.com/sirupsen/logrus"
 )
 
 // CallGeminiFunc allows mocking of CallGemini in tests
 var CallGeminiFunc = CallGemini
-
-// debugMode controls whether debug output is printed
-var debugMode = os.Getenv("AI_TEAM_DEBUG") == "1"
-
-func debugPrintf(format string, args ...interface{}) {
-	if debugMode {
-		logrus.Debugf("DEBUG: "+format, args...)
-	}
-}
 
 func CallOpenAI(client *http.Client, task string, apiURL string, apiKey string) (string, error) {
 	logrus.Info("Calling OpenAI API...")
@@ -70,15 +61,18 @@ func CallGemini(client *http.Client, task string, model string, apiURL string, a
 	fullAPIURL := fmt.Sprintf("%s/v1/models/%s:generateContent", apiURL, model)
 
 	// Escape the task string for JSON
-	escapedTask := strconv.Quote(task)
-
-	requestBody := strings.NewReader(fmt.Sprintf(`{
-		"contents": [{
-			"parts":[
-				{"text": %s}
-			]
-		}]
-	}`, escapedTask))
+	request := types.GeminiRequest{
+		Contents: []types.GeminiContent{
+			{
+				Parts: []types.GeminiPart{
+					{Text: task},
+				},
+			},
+		},
+	}
+	bodyBytes, err := json.Marshal(request)
+	requestBody := strings.NewReader(string(bodyBytes))
+	logger.DebugPrintf("Gemini request body: %s", string(bodyBytes))
 
 	req, err := http.NewRequest("POST", fullAPIURL, requestBody)
 	if err != nil {
@@ -118,7 +112,7 @@ func CallGemini(client *http.Client, task string, model string, apiURL string, a
 	bodyString := string(bodyBytes)
 
 	// Debug: Log the raw response for troubleshooting
-	debugPrintf("Raw Gemini response: %s\n", bodyString)
+	logger.DebugPrintf("Raw Gemini response: %s\n", bodyString)
 
 	// Try to extract JSON from a markdown code block with "tool_code" language specifier
 	toolCodeBlockPrefix := "```tool_code\n"
@@ -127,7 +121,7 @@ func CallGemini(client *http.Client, task string, model string, apiURL string, a
 		jsonString := strings.TrimPrefix(bodyString, toolCodeBlockPrefix)
 		jsonString = strings.TrimSuffix(jsonString, toolCodeBlockSuffix)
 		bodyString = jsonString // Use the extracted JSON string for further processing
-		debugPrintf("Extracted tool_code JSON: %s\n", bodyString)
+		logger.DebugPrintf("Extracted tool_code JSON: %s\n", bodyString)
 	}
 
 	// Now, try to extract content between <__AI_AGENT_CONTENT__> tags
@@ -138,10 +132,10 @@ func CallGemini(client *http.Client, task string, model string, apiURL string, a
 		endIndex := strings.LastIndex(bodyString, contentEndTag)
 		if startIndex < endIndex {
 			extractedContent := bodyString[startIndex:endIndex]
-			debugPrintf("Extracted content between tags: %s\n", extractedContent)
+			logger.DebugPrintf("Extracted content between tags: %s\n", extractedContent)
 			// Now, try to unmarshal the extracted content as a tool call
 			if err := json.NewDecoder(bytes.NewReader([]byte(extractedContent))).Decode(&toolCallReq); err == nil && toolCallReq.ToolCall.Name != "" {
-				debugPrintf("Successfully parsed tool call from content tags: %s\n", toolCallReq.ToolCall.Name)
+				logger.DebugPrintf("Successfully parsed tool call from content tags: %s\n", toolCallReq.ToolCall.Name)
 				// It's a tool call!
 				toolOutput, toolErr := executeToolCall(toolCallReq.ToolCall, configurableTools)
 				if toolErr != nil {
@@ -149,14 +143,14 @@ func CallGemini(client *http.Client, task string, model string, apiURL string, a
 				}
 				return toolOutput, nil // Return the tool's output
 			} else {
-				debugPrintf("Failed to parse tool call from content tags, error: %v\n", err)
+				logger.DebugPrintf("Failed to parse tool call from content tags, error: %v\n", err)
 			}
 		}
 	}
 
 	// If not a tool call in a markdown block or between content tags, try direct JSON decode
 	if err := json.NewDecoder(bytes.NewReader([]byte(bodyString))).Decode(&toolCallReq); err == nil && toolCallReq.ToolCall.Name != "" {
-		debugPrintf("Successfully parsed tool call from direct JSON: %s\n", toolCallReq.ToolCall.Name)
+		logger.DebugPrintf("Successfully parsed tool call from direct JSON: %s\n", toolCallReq.ToolCall.Name)
 		// It's a tool call!
 		toolOutput, toolErr := executeToolCall(toolCallReq.ToolCall, configurableTools)
 		if toolErr != nil {
@@ -164,7 +158,7 @@ func CallGemini(client *http.Client, task string, model string, apiURL string, a
 		}
 		return toolOutput, nil // Return the tool's output
 	} else {
-		debugPrintf("Failed to parse tool call from direct JSON, error: %v\n", err)
+		logger.DebugPrintf("Failed to parse tool call from direct JSON, error: %v\n", err)
 	}
 
 	// If not a tool call, attempt to decode as a regular Gemini response
@@ -174,7 +168,7 @@ func CallGemini(client *http.Client, task string, model string, apiURL string, a
 			candidate := geminiResp.Candidates[0]
 			// Handle UNEXPECTED_TOOL_CALL
 			if candidate.FinishReason == "UNEXPECTED_TOOL_CALL" && candidate.ToolCall != nil {
-				debugPrintf("Gemini returned UNEXPECTED_TOOL_CALL, executing tool: %s\n", candidate.ToolCall.Name)
+				logger.DebugPrintf("Gemini returned UNEXPECTED_TOOL_CALL, executing tool: %s\n", candidate.ToolCall.Name)
 				toolOutput, toolErr := executeToolCall(*candidate.ToolCall, configurableTools)
 				if toolErr != nil {
 					return "", toolErr
@@ -201,7 +195,7 @@ var (
 
 // executeToolCall executes the requested tool and returns its output.
 func executeToolCall(tc types.ToolCall, configurableTools []types.ConfigurableTool) (string, error) {
-	debugPrintf("Executing tool call: %s with args: %v\n", tc.Name, tc.Arguments)
+	logger.DebugPrintf("Executing tool call: %s with args: %v\n", tc.Name, tc.Arguments)
 
 	// Check for hardcoded tools first
 	switch tc.Name {
@@ -214,20 +208,20 @@ func executeToolCall(tc types.ToolCall, configurableTools []types.ConfigurableTo
 		if !ok {
 			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'content' for write_file", nil)
 		}
-		debugPrintf("Calling WriteFileFunc with filePath: %s, content length: %d\n", filePath, len(content)) // Debug print
+		logger.DebugPrintf("Calling WriteFileFunc with filePath: %s, content length: %d\n", filePath, len(content)) // Debug print
 		result, err := WriteFileFunc(filePath, content)
 		if err != nil {
-			debugPrintf("WriteFileFunc failed: %v\n", err)
+			logger.DebugPrintf("WriteFileFunc failed: %v\n", err)
 			return "", err
 		}
-		debugPrintf("WriteFileFunc succeeded: %s\n", result)
+		logger.DebugPrintf("WriteFileFunc succeeded: %s\n", result)
 		return result, nil
 	case "run_command":
 		command, ok := tc.Arguments["command"].(string)
 		if !ok {
 			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'command' for run_command", nil)
 		}
-		debugPrintf("Calling RunCommandFunc with command: %s\n", command) // Debug print
+		logger.DebugPrintf("Calling RunCommandFunc with command: %s\n", command) // Debug print
 		return RunCommandFunc(command)
 	case "apply_patch":
 		filePath, ok := tc.Arguments["file_path"].(string)
@@ -238,14 +232,14 @@ func executeToolCall(tc types.ToolCall, configurableTools []types.ConfigurableTo
 		if !ok {
 			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'patch_content' for apply_patch", nil)
 		}
-		debugPrintf("Calling ApplyPatchFunc with filePath: %s, patchContent length: %d\n", filePath, len(patchContent)) // Debug print
+		logger.DebugPrintf("Calling ApplyPatchFunc with filePath: %s, patchContent length: %d\n", filePath, len(patchContent)) // Debug print
 		return ApplyPatchFunc(filePath, patchContent)
 	}
 
 	// Check for configurable tools
 	for _, ct := range configurableTools {
 		if ct.Name == tc.Name {
-			debugPrintf("Using configurable tool: %s\n", ct.Name)
+			logger.DebugPrintf("Using configurable tool: %s\n", ct.Name)
 			// Construct the command from the template
 			command := ct.CommandTemplate
 			for _, arg := range ct.Arguments {
@@ -255,13 +249,13 @@ func executeToolCall(tc types.ToolCall, configurableTools []types.ConfigurableTo
 					return "", errors.New(errors.ErrCodeTool, fmt.Sprintf("missing or invalid argument '%s' for configurable tool '%s'", arg.Name, ct.Name), nil)
 				}
 			}
-			debugPrintf("Executing configurable tool command: %s\n", command)
+			logger.DebugPrintf("Executing configurable tool command: %s\n", command)
 			result, err := RunCommandFunc(command)
 			if err != nil {
-				debugPrintf("Configurable tool failed: %v\n", err)
+				logger.DebugPrintf("Configurable tool failed: %v\n", err)
 				return "", err
 			}
-			debugPrintf("Configurable tool succeeded: %s\n", result)
+			logger.DebugPrintf("Configurable tool succeeded: %s\n", result)
 			return result, nil
 		}
 	}
@@ -269,14 +263,26 @@ func executeToolCall(tc types.ToolCall, configurableTools []types.ConfigurableTo
 	return "", errors.New(errors.ErrCodeTool, fmt.Sprintf("unknown tool: %s", tc.Name), nil)
 }
 
-func CallOllama(client *http.Client, task string, apiURL string) (string, error) {
+func CallOllama(client *http.Client, task string, apiURL string, model string, tools []types.ConfigurableTool) (string, error) {
 	logrus.Info("Calling Ollama API...")
-
-	requestBody := strings.NewReader(`{
-		"model": "llama2",
-		"prompt": "` + task + `"
-	}`)
-
+	var reqBody = types.OllamaRequest{
+		Model: model,
+		Messages: []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		}{
+			{
+				Role:    "user",
+				Content: task,
+			},
+		},
+	}
+	bodyStr, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", errors.New(errors.ErrCodeAPI, "failed to marshal ollama request body", err)
+	}
+	requestBody := strings.NewReader(string(bodyStr))
+	logger.DebugPrintf("Ollama request body: %s", string(bodyStr))
 	req, err := http.NewRequest("POST", apiURL, requestBody)
 	if err != nil {
 		return "", errors.New(errors.ErrCodeAPI, "failed to create ollama request", err)
@@ -290,8 +296,14 @@ func CallOllama(client *http.Client, task string, apiURL string) (string, error)
 	}
 	defer resp.Body.Close()
 
+	logger.DebugPrintf("Ollama response status: %s", resp.Status)
+	var bodyBytes, readErr = io.ReadAll(resp.Body)
+	if readErr != nil {
+		return "", errors.New(errors.ErrCodeAPI, "failed to read ollama response body", readErr)
+	}
+	logger.DebugPrintf("Ollama response body: %s", string(bodyBytes))
 	var ollamaResp types.OllamaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+	if err := json.Unmarshal(bodyBytes, &ollamaResp); err != nil {
 		return "", errors.New(errors.ErrCodeAPI, "failed to decode ollama response", err)
 	}
 

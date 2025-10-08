@@ -56,9 +56,7 @@ var runRoleCmd = &cobra.Command{
 		output, err := roles.ExecuteRole(
 			targetRole,
 			roleInput,
-			cfg.Gemini.APIURL,
-			cfg.Gemini.APIKey,
-			cfg.Tools,
+			cfg,
 			logFilePath,
 		)
 		if err != nil {
@@ -153,11 +151,8 @@ var runChainCmd = &cobra.Command{
 
 		result, err := roles.ExecuteChain(
 			targetChain,
-			cfg.Roles,
 			initialInput,
-			cfg.Gemini.APIURL,
-			cfg.Gemini.APIKey,
-			cfg.Tools,
+			cfg,
 			logFilePath, // Pass logFilePath
 		)
 		if err != nil {

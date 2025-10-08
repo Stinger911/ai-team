@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"ai-team/pkg/ai"
+
 	"github.com/spf13/cobra"
 )
 
@@ -14,7 +15,7 @@ var ollamaCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		task, _ := cmd.Flags().GetString("task")
 		client := &http.Client{}
-		response, err := ai.CallOllama(client, task, cfg.Ollama.APIURL)
+		response, err := ai.CallOllama(client, task, cfg.Ollama.APIURL, cfg.Ollama.Model, cfg.Tools)
 		if err != nil {
 			HandleError(err) // Use HandleError
 		}

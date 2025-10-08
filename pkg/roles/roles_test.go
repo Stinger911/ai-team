@@ -1,6 +1,7 @@
 package roles
 
 import (
+	"ai-team/config"
 	"ai-team/pkg/ai"
 	"ai-team/pkg/types"
 	"net/http"
@@ -21,7 +22,8 @@ func TestExecuteRole_Basic(t *testing.T) {
 		Model:  "gemini-2.5-flash",
 	}
 	input := map[string]interface{}{"input": "hello"}
-	output, err := ExecuteRole(role, input, "http://fake", "fake-key", nil, "")
+	mockCfg := config.Config{}
+	output, err := ExecuteRole(role, input, mockCfg, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

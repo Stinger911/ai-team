@@ -1,12 +1,12 @@
 package ai
 
 import (
+	"ai-team/pkg/types"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"testing"
-	"fmt"
 	"strings"
-	"ai-team/pkg/types"
+	"testing"
 )
 
 func TestCallOpenAI(t *testing.T) {
@@ -194,7 +194,7 @@ func TestCallOllama(t *testing.T) {
 
 	client := server.Client()
 
-	resp, err := CallOllama(client, "write a hello world program in Go", server.URL)
+	resp, err := CallOllama(client, "write a hello world program in Go", server.URL, "test-model", nil)
 
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)

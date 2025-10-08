@@ -2,5 +2,6 @@
 ai-team
 
 # local ignores
+ai-team-data/
 *.nogit.*
 *.log

@@ -20,6 +20,7 @@ type Config struct {
 	}
 	Ollama struct {
 		APIURL string `mapstructure:"APIURL"`
+		Model  string `mapstructure:"Model"`
 	}
 	LogFilePath string                   `mapstructure:"LogFilePath"`
 	LogStdout   bool                     `mapstructure:"LogStdout"`
@@ -53,4 +54,14 @@ func LoadConfig(configPath string) (Config, error) {
 		config.LogStdout = true
 	}
 	return config, nil
+}
+
+func IsModelDefined(name string, cfg Config) bool {
+	models := []string{"Ollama", "Gemini", "OpenAI"}
+	for _, s := range models {
+		if s == name {
+			return true
+		}
+	}
+	return false
 }
