@@ -3,7 +3,9 @@ package config
 import (
 	"ai-team/pkg/errors"
 	"ai-team/pkg/types" // Import types package
+	"fmt"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -75,10 +77,67 @@ func LoadConfig(configPath string) (Config, error) {
 
 // Validate checks for required config fields
 func (c *Config) Validate() error {
-	// if c.OpenAI.APIKey == "" && c.Gemini.APIKey == "" {
-	// 	return errors.New(errors.ErrCodeConfig, "at least one API key must be set (OpenAI or Gemini)", nil)
-	// }
-	// ...add more checks as needed...
+	if c.OpenAI.Apikey == "" && c.Gemini.Apikey == "" && c.Ollama.Apiurl == "" {
+		return errors.New(errors.ErrCodeConfig, "at least one API configuration must be set (OpenAI, Gemini, or Ollama)", nil)
+	}
+
+	// Validate OpenAI models
+	for name, m := range c.OpenAI.Models {
+		if m.Model == "" {
+			return errors.New(errors.ErrCodeConfig, fmt.Sprintf("OpenAI model '%s' missing 'model' field", name), nil)
+		}
+		if m.MaxTokens <= 0 {
+			return errors.New(errors.ErrCodeConfig, fmt.Sprintf("OpenAI model '%s' has invalid max_tokens", name), nil)
+		}
+	}
+	// Validate Gemini models
+	for name, m := range c.Gemini.Models {
+		if m.Model == "" {
+			return errors.New(errors.ErrCodeConfig, fmt.Sprintf("Gemini model '%s' missing 'model' field", name), nil)
+		}
+		if m.MaxTokens <= 0 {
+			return errors.New(errors.ErrCodeConfig, fmt.Sprintf("Gemini model '%s' has invalid max_tokens", name), nil)
+		}
+	}
+	// Validate Ollama models
+	for name, m := range c.Ollama.Models {
+		if m.Model == "" {
+			return errors.New(errors.ErrCodeConfig, fmt.Sprintf("Ollama model '%s' missing 'model' field", name), nil)
+		}
+	}
+
+	for _, tool := range c.Tools {
+		logrus.Debugf("Validating tool: %+v", tool)
+		if tool.Name == "" {
+			return errors.New(errors.ErrCodeConfig, "tool must have a Name", nil)
+		}
+		if tool.CommandTemplate == "" {
+			return errors.New(errors.ErrCodeConfig, fmt.Sprintf("tool '%s' must have a CommandTemplate", tool.Name), nil)
+		}
+		for _, arg := range tool.Arguments {
+			if arg.Name == "" || arg.Type == "" {
+				return errors.New(errors.ErrCodeConfig, fmt.Sprintf("tool '%s' has argument with missing name or type", tool.Name), nil)
+			}
+		}
+	}
+
+	for name, role := range c.Roles {
+		if role.Model == "" {
+			return errors.New(errors.ErrCodeConfig, fmt.Sprintf("role '%s' must have a Model", name), nil)
+		}
+	}
+
+	// Validate chains: referenced roles must exist
+	for cname, chain := range c.Chains {
+		for _, step := range chain.Steps {
+			if step.Role != "" {
+				if _, ok := c.Roles[step.Role]; !ok {
+					return errors.New(errors.ErrCodeConfig, fmt.Sprintf("chain '%s' references undefined role '%s'", cname, step.Role), nil)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

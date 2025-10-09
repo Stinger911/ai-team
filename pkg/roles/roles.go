@@ -12,6 +12,7 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
+	"time"
 
 	"ai-team/pkg/logger"
 )
@@ -126,7 +127,15 @@ func ExecuteChain(
 	roles := cfg.Roles
 	logger.DebugPrintf("Executing chain (steps): %+v", chain.Steps)
 	logger.DebugPrintf("Roles: %v", roles)
-	configurableTools := cfg.Tools
+	// Initialize ToolRegistry and ToolExecutor for the chain
+	toolRegistry := tools.NewToolRegistry()
+	tools.RegisterDefaultTools(toolRegistry)
+	toolExecutor := &tools.ToolExecutor{
+		Registry:   toolRegistry,
+		Logger:     nil, // Use default logger or inject as needed
+		RetryCount: 1,
+		Timeout:    10 * time.Second,
+	}
 
 	context := make(map[string]interface{})
 	for k, v := range initialInput {
@@ -207,7 +216,7 @@ func ExecuteChain(
 			toolCallErr := json.Unmarshal([]byte(rawOutput), &toolCallObj)
 			if toolCallErr == nil && toolCallObj.ToolName != "" {
 				logger.DebugPrintf("[ToolCall] Executing tool: %s", toolCallObj.ToolName)
-				lastToolResponse = executeConfiguredTool(toolCallObj.ToolName, toolCallObj.Arguments, configurableTools)
+				lastToolResponse = executeConfiguredTool(toolCallObj.ToolName, toolCallObj.Arguments, toolRegistry, toolExecutor)
 			} else {
 				// Try tool_call (Gemini style, use rawOutput)
 				var toolCallWrap struct {
@@ -218,7 +227,7 @@ func ExecuteChain(
 				}
 				if err := json.Unmarshal([]byte(rawOutput), &toolCallWrap); err == nil && toolCallWrap.ToolCall.Name != "" {
 					logger.DebugPrintf("[ToolCallWrap] Executing tool: %s", toolCallWrap.ToolCall.Name)
-					lastToolResponse = executeConfiguredTool(toolCallWrap.ToolCall.Name, toolCallWrap.ToolCall.Arguments, configurableTools)
+					lastToolResponse = executeConfiguredTool(toolCallWrap.ToolCall.Name, toolCallWrap.ToolCall.Arguments, toolRegistry, toolExecutor)
 				} else {
 					// Fallback: if output is a JSON object with file_path and content, write the file (use extractFirstJSON output)
 					var fileObj struct {
@@ -261,19 +270,28 @@ func extractFirstJSON(s string) string {
 }
 
 // executeConfiguredTool executes a tool by name from the list of configurable tools.
-func executeConfiguredTool(toolName string, args map[string]interface{}, tools []types.ConfigurableTool) interface{} {
-	for _, tool := range tools {
-		if tool.Name == toolName {
-			cmd := tool.CommandTemplate
-			// For now, just return the command and args (simulate execution)
-			return map[string]interface{}{
-				"tool": toolName,
-				"args": args,
-				"cmd":  cmd,
-			}
+// Refactored: executeConfiguredTool uses ToolRegistry and ToolExecutor for robust orchestration.
+func executeConfiguredTool(toolName string, args map[string]interface{}, reg *tools.ToolRegistry, exec *tools.ToolExecutor) interface{} {
+	call := tools.ToolCall{
+		Name:      toolName,
+		Arguments: args,
+	}
+	if err := reg.ValidateToolCall(call); err != nil {
+		return map[string]interface{}{
+			"error":            "tool call validation failed",
+			"tool":             toolName,
+			"validation_error": err.Error(),
 		}
 	}
-	return map[string]interface{}{"error": "tool not found", "tool": toolName}
+	result, err := exec.Execute(call)
+	if err != nil {
+		return map[string]interface{}{
+			"error":      "tool execution failed",
+			"tool":       toolName,
+			"exec_error": err.Error(),
+		}
+	}
+	return result
 }
 
 // keys returns the keys of a map[string]T as a []string

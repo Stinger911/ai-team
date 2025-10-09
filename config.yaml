@@ -40,20 +40,30 @@ ollama:
       model: codellama:34b
 
 tools:
-  - name: "list_dir"
-    description: "Lists contents of a directory."
-    command_template: "ls -la {{.path}}"
+  - name: "write_file"
+    description: "Writes content to a specified file."
     arguments:
-      - name: "path"
+      - name: "filePath"
         type: "string"
-        description: "The path to the directory."
-  - name: "read_file"
-    description: "Reads the content of a file."
-    command_template: "cat {{.file_path}}"
+        description: "Path to the file to write."
+      - name: "content"
+        type: "string"
+        description: "Content to write."
+  - name: "run_command"
+    description: "Executes a shell command."
     arguments:
-      - name: "file_path"
+      - name: "command"
         type: "string"
-        description: "The path to the file to read."
+        description: "Shell command to execute."
+  - name: "apply_patch"
+    description: "Applies a patch to a file."
+    arguments:
+      - name: "filePath"
+        type: "string"
+        description: "Path to the file to patch."
+      - name: "patchContent"
+        type: "string"
+        description: "Patch content."
 roles:
   coder:
     model_provider: openai
@@ -70,11 +80,22 @@ roles:
   architect:
     model_provider: gemini
     model_name: gemini-pro
-    prompt: "You are an architect. Your task is to design a solution for the following problem: {{.problem}}. Output your design as a tool call to 'write_file'. The 'file_path' argument should be 'design.md'. The 'content' argument should be your markdown design, enclosed within <__AI_AGENT_CONTENT__> and <__AI_AGENT_CONTENT__> tags. Example: {\"tool_call\": {\"name\": \"write_file\", \"arguments\": {\"file_path\": \"design.md\", \"content\": \"<__AI_AGENT_CONTENT__># My Design...\n<__AI_AGENT_CONTENT__>\"}}}"
+    prompt: |
+      You are an architect. Your task is to design a solution for
+      the following problem: {{.problem}}. Output your design as a
+      tool call to 'write_file'. The 'file_path' argument should be 
+      'design.md'. The 'content' argument should be your markdown
+      design. Example:
+      {\"tool_call\": {\"name\": \"write_file\", \"arguments\": {\"file_path\": \"design.md\", \"content\": \"# My Design...\n\"}}}"
   tester:
     model_provider: gemini
     model_name: gemini-pro
-    prompt: "You are a tester. Review the following code: {{.code}} and provide test cases. Output your test cases as a tool call to 'write_file'. The 'file_path' argument should be 'test_cases.md'. The 'content' argument should be your test cases in markdown, enclosed within <__AI_AGENT_CONTENT__> and <__AI_AGENT_CONTENT__> tags. Example: {\"tool_call\": {\"name\": \"write_file\", \"arguments\": {\"file_path\": \"test_cases.md\", \"content\": \"<__AI_AGENT_CONTENT__>## Test Cases...\n<__AI_AGENT_CONTENT__>\"}}}"
+    prompt: |
+      You are a tester. Review the following code: {{.code}} and provide
+      test cases. Output your test cases as a tool call to 'write_file'.
+      The 'file_path' argument should be 'test_cases.md'. The 'content'
+      argument should be your test cases in markdown. Example:
+      {\"tool_call\": {\"name\": \"write_file\", \"arguments\": {\"file_path\": \"test_cases.md\", \"content\": \"## Test Cases...\n\"}}}"
 
 chains:
   design-code-document:

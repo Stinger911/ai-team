@@ -16,6 +16,49 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// AIClient abstracts provider-specific logic for chat and embedding.
+type AIClient interface {
+	ChatCompletion(task string) (string, error)
+	// Add more methods as needed, e.g. Embedding, Image, etc.
+}
+
+// OpenAIClient implements AIClient for OpenAI.
+type OpenAIClient struct {
+	Client *http.Client
+	APIURL string
+	APIKey string
+	Model  string
+}
+
+func (c *OpenAIClient) ChatCompletion(task string) (string, error) {
+	return CallOpenAI(c.Client, task, c.APIURL, c.APIKey)
+}
+
+// GeminiClient implements AIClient for Gemini.
+type GeminiClient struct {
+	Client            *http.Client
+	APIURL            string
+	APIKey            string
+	Model             string
+	ConfigurableTools []types.ConfigurableTool
+}
+
+func (c *GeminiClient) ChatCompletion(task string) (string, error) {
+	return CallGemini(c.Client, task, c.Model, c.APIURL, c.APIKey, c.ConfigurableTools)
+}
+
+// OllamaClient implements AIClient for Ollama.
+type OllamaClient struct {
+	Client            *http.Client
+	APIURL            string
+	Model             string
+	ConfigurableTools []types.ConfigurableTool
+}
+
+func (c *OllamaClient) ChatCompletion(task string) (string, error) {
+	return CallOllama(c.Client, task, c.APIURL, c.Model, c.ConfigurableTools)
+}
+
 // CallGeminiFunc allows mocking of CallGemini in tests
 var CallGeminiFunc = CallGemini
 
@@ -71,6 +114,9 @@ func CallGemini(client *http.Client, task string, model string, apiURL string, a
 		},
 	}
 	bodyBytes, err := json.Marshal(request)
+	if err != nil {
+		return "", errors.New(errors.ErrCodeAPI, "failed to marshal gemini request body", err)
+	}
 	requestBody := strings.NewReader(string(bodyBytes))
 	logger.DebugPrintf("Gemini request body: %s", string(bodyBytes))
 

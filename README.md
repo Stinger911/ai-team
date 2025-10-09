@@ -6,6 +6,17 @@ A command-line tool to manage a team of AI agents for programming.
 
 This tool allows you to interact with different AI models (OpenAI, Gemini, and Ollama) from the command line. You can provide a task to the AI model and get a response.
 
+## Dependencies
+
+This project uses the following main Go libraries:
+
+- `github.com/sirupsen/logrus` — Structured logging
+- `github.com/spf13/cobra` — CLI framework
+- `github.com/spf13/viper` — Configuration management
+- `gopkg.in/yaml.v3` — YAML parsing
+
+All dependencies are managed via Go modules (`go.mod`). Run `go mod tidy` to ensure all dependencies are installed.
+
 ## Installation
 
 1. Clone the repository:
