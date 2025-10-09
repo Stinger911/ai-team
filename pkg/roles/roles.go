@@ -2,7 +2,7 @@ package roles
 
 import (
 	"ai-team/config"
-	"ai-team/pkg/ai"
+	ai "ai-team/pkg/ai"
 	"ai-team/pkg/errors"
 	"ai-team/pkg/tools"
 	"ai-team/pkg/types"
@@ -112,8 +112,21 @@ func ExecuteRole(
 		}
 	}
 
-	// Always sanitize output for downstream use
-	cleanResponse := extractFirstJSON(response)
+	// Use ToolCallExtractor for robust extraction
+	extractor := ai.NewDefaultToolCallExtractor(nil)
+	tc, _, err := extractor.ExtractToolCall(response)
+	if err == nil && tc != nil {
+		// If a tool-call is found, return its JSON
+		b, _ := json.Marshal(tc)
+		return string(b), roleErr
+	}
+	// Fallback: extract first JSON object (legacy)
+	cleanResponse := response
+	start := strings.Index(response, "{")
+	end := strings.LastIndex(response, "}")
+	if start != -1 && end != -1 && end > start {
+		cleanResponse = response[start : end+1]
+	}
 	return cleanResponse, roleErr
 }
 
@@ -192,7 +205,22 @@ func ExecuteChain(
 
 			logger.DebugPrintf("Executing role: %s (loop %d/%d) with input: %v", roleKey, i+1, loopCount, roleInput)
 			rawOutput, err := ExecuteRole(roleDef, roleInput, cfg, logFilePath)
-			output := extractFirstJSON(rawOutput)
+			// Use ToolCallExtractor for robust extraction
+			extractor := ai.NewDefaultToolCallExtractor(nil)
+			tc, _, errExtract := extractor.ExtractToolCall(rawOutput)
+			var output string
+			if errExtract == nil && tc != nil {
+				b, _ := json.Marshal(tc)
+				output = string(b)
+			} else {
+				// Fallback: extract first JSON object (legacy)
+				output = rawOutput
+				start := strings.Index(rawOutput, "{")
+				end := strings.LastIndex(rawOutput, "}")
+				if start != -1 && end != -1 && end > start {
+					output = rawOutput[start : end+1]
+				}
+			}
 			if err != nil {
 				logger.DebugPrintf("Failed to execute role %s in chain: %v", roleKey, err)
 				// Log the failed role call

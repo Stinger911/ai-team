@@ -93,6 +93,20 @@ Check the log output for lines like:
 
 If you see warnings such as `file_path is empty, skipping file write`, check that your AI prompt and role chain are producing the correct tool call JSON structure.
 
+## Robust Tool-Call Extraction
+
+AI responses are now parsed using a robust extraction pipeline that supports:
+
+- JSON code blocks (`json ... `)
+- Inline JSON objects
+- Multiple tool-call formats (tool_call, tool_name, direct JSON)
+- Strict schema validation for tool-calls
+- Graceful error handling and fallback for malformed or ambiguous responses
+
+If a tool-call is present in the response, it will be detected and executed automatically. If the response is malformed, the system will log a warning and attempt to recover or skip the tool-call.
+
+See `pkg/ai/toolcallextract.go` for implementation details and `pkg/ai/toolcallextract_test.go` for test cases.
+
 ## Configuration
 
 The tool uses a `config.yaml` file to configure the API keys, URLs, roles, chains, and logging. Example keys:

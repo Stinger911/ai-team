@@ -5,6 +5,7 @@
 **AI Agent Team CLI** is a command-line tool that orchestrates multiple AI agents to work together on programming tasks. It supports multiple LLM providers (OpenAI, Google Gemini, and Ollama) and enables complex workflows through role chains, where AI agents can perform sequential tasks, execute tools, and write files automatically.
 
 ### Main Purpose and Goals
+
 - Provide a unified CLI interface for interacting with multiple AI models
 - Enable AI agents to work together through predefined role chains
 - Support tool calling for file operations, command execution, and patches
@@ -12,6 +13,7 @@
 - Automatically write output files when AI responses include tool calls
 
 ### Key Technologies Used
+
 - **Go 1.23+** - Core language
 - **Cobra** - CLI framework
 - **Viper** - Configuration management
@@ -53,14 +55,15 @@ The application follows a clean, modular architecture with clear separation of c
 1. **CMD Layer** (`cmd/`)
    - `root.go` - Root command, config loading, chain/role execution
    - `openai.go`, `gemini.go`, `ollama.go` - Model-specific commands
-   
 2. **Roles Package** (`pkg/roles/`)
+
    - `ExecuteRole()` - Executes a single AI role with templated prompts
    - `ExecuteChain()` - Orchestrates sequences of roles with context passing
    - Tool call detection and execution
    - JSON extraction from AI responses
 
 3. **AI Package** (`pkg/ai/`)
+
    - `CallOpenAI()`, `CallGemini()`, `CallOllama()` - Provider-specific API clients
    - `executeToolCall()` - Processes tool requests from AI responses
    - `ListGeminiModels()` - Model discovery
@@ -89,6 +92,7 @@ User Command → CLI Parser → Config Load → Role Chain Executor
 ```
 
 **Key Patterns:**
+
 - Roles pass context between each other using template variables
 - AI responses can include tool calls (JSON format)
 - Tool execution results are stored in context for subsequent roles
@@ -184,16 +188,19 @@ AI_TEAM_DEBUG=1 ./ai-team run-chain design-code-test --input "problem=test"
 The project uses **Go's built-in testing framework** with comprehensive test coverage:
 
 **Unit Tests:**
+
 - Mock all external dependencies (HTTP clients, file operations)
 - Use `httptest.NewServer()` for testing API clients
 - Function injection for testability (`CallGeminiFunc`, `WriteFileFunc`, etc.)
 - Test files located alongside source code (`*_test.go`)
 
 **Integration Tests:**
+
 - `roles_integration_test.go` - Tests CLI execution (skipped if binary missing)
 - Tests role chains end-to-end
 
 **Running Tests:**
+
 ```bash
 # Run all tests
 make test
@@ -207,6 +214,7 @@ go test -v ./pkg/roles/
 ```
 
 **Test Coverage Areas:**
+
 - API client responses (success, errors, malformed JSON, network failures)
 - Tool call parsing and execution
 - Role template rendering
@@ -216,18 +224,21 @@ go test -v ./pkg/roles/
 ### Development Environment Setup
 
 **Prerequisites:**
+
 - Go 1.23.0 or higher
 - Git
 - Bash (for Makefile and tool commands)
 - Access to at least one AI provider (OpenAI, Gemini, or Ollama)
 
 **Setup Steps:**
+
 1. Clone the repository
 2. Copy and configure `config.yaml` with your API keys
 3. Run `make build` to compile the binary
 4. Run `make test` to verify everything works
 
 **Configuration:**
+
 - Edit `config.yaml` to add API keys for your chosen providers
 - Define custom roles with prompts and model preferences
 - Create role chains for complex workflows
@@ -275,7 +286,7 @@ rm -f ai-team
 ### Common Patterns
 
 - **Template Rendering**: Prompts use Go's `text/template` for variable substitution
-- **JSON Extraction**: Responses are sanitized with `extractFirstJSON()` to handle markdown
+- **Tool-Call Extraction**: Responses are parsed using a robust handler-based pipeline (`pkg/ai/toolcallextract.go`) that supports multiple formats (JSON code blocks, inline JSON, tool_call, tool_name, etc.) and strict schema validation. Legacy `extractFirstJSON()` is now replaced in orchestration logic.
 - **Tool Detection**: Multiple formats supported (`tool_call`, `tool_name`, direct JSON with `file_path`)
 - **Function Injection**: Functions assigned to variables for test mocking
 - **Structured Logging**: Use logrus with fields for better log analysis

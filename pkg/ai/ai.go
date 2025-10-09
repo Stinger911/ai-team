@@ -153,58 +153,21 @@ func CallGemini(client *http.Client, task string, model string, apiURL string, a
 		return "", errors.New(errors.ErrCodeAPI, fmt.Sprintf("Gemini API returned status %d", resp.StatusCode), nil)
 	}
 
-	// Attempt to decode as a tool call
-	var toolCallReq types.ToolCallRequest
 	bodyString := string(bodyBytes)
-
-	// Debug: Log the raw response for troubleshooting
 	logger.DebugPrintf("Raw Gemini response: %s\n", bodyString)
 
-	// Try to extract JSON from a markdown code block with "tool_code" language specifier
-	toolCodeBlockPrefix := "```tool_code\n"
-	toolCodeBlockSuffix := "```"
-	if strings.HasPrefix(bodyString, toolCodeBlockPrefix) && strings.HasSuffix(bodyString, toolCodeBlockSuffix) {
-		jsonString := strings.TrimPrefix(bodyString, toolCodeBlockPrefix)
-		jsonString = strings.TrimSuffix(jsonString, toolCodeBlockSuffix)
-		bodyString = jsonString // Use the extracted JSON string for further processing
-		logger.DebugPrintf("Extracted tool_code JSON: %s\n", bodyString)
-	}
-
-	// Now, try to extract content between <__AI_AGENT_CONTENT__> tags
-	contentStartTag := "<__AI_AGENT_CONTENT__>"
-	contentEndTag := "<__AI_AGENT_CONTENT__>"
-	if strings.Contains(bodyString, contentStartTag) && strings.Contains(bodyString, contentEndTag) {
-		startIndex := strings.Index(bodyString, contentStartTag) + len(contentStartTag)
-		endIndex := strings.LastIndex(bodyString, contentEndTag)
-		if startIndex < endIndex {
-			extractedContent := bodyString[startIndex:endIndex]
-			logger.DebugPrintf("Extracted content between tags: %s\n", extractedContent)
-			// Now, try to unmarshal the extracted content as a tool call
-			if err := json.NewDecoder(bytes.NewReader([]byte(extractedContent))).Decode(&toolCallReq); err == nil && toolCallReq.ToolCall.Name != "" {
-				logger.DebugPrintf("Successfully parsed tool call from content tags: %s\n", toolCallReq.ToolCall.Name)
-				// It's a tool call!
-				toolOutput, toolErr := executeToolCall(toolCallReq.ToolCall, configurableTools)
-				if toolErr != nil {
-					return "", toolErr // Return the tool execution error
-				}
-				return toolOutput, nil // Return the tool's output
-			} else {
-				logger.DebugPrintf("Failed to parse tool call from content tags, error: %v\n", err)
-			}
-		}
-	}
-
-	// If not a tool call in a markdown block or between content tags, try direct JSON decode
-	if err := json.NewDecoder(bytes.NewReader([]byte(bodyString))).Decode(&toolCallReq); err == nil && toolCallReq.ToolCall.Name != "" {
-		logger.DebugPrintf("Successfully parsed tool call from direct JSON: %s\n", toolCallReq.ToolCall.Name)
-		// It's a tool call!
-		toolOutput, toolErr := executeToolCall(toolCallReq.ToolCall, configurableTools)
+	// Use the robust ToolCallExtractor
+	// NOTE: In production, pass the actual ToolRegistry instance
+	extractor := NewDefaultToolCallExtractor(nil)
+	if tc, handler, err := extractor.ExtractToolCall(bodyString); err == nil && tc != nil {
+		logger.DebugPrintf("ToolCallExtractor: extracted tool-call using handler '%s': %s", handler, tc.Name)
+		toolOutput, toolErr := executeToolCall(*tc, configurableTools)
 		if toolErr != nil {
-			return "", toolErr // Return the tool execution error
+			return "", toolErr
 		}
-		return toolOutput, nil // Return the tool's output
-	} else {
-		logger.DebugPrintf("Failed to parse tool call from direct JSON, error: %v\n", err)
+		return toolOutput, nil
+	} else if err != nil {
+		logger.DebugPrintf("ToolCallExtractor: no valid tool-call found: %v", err)
 	}
 
 	// If not a tool call, attempt to decode as a regular Gemini response
