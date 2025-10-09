@@ -15,25 +15,25 @@ import (
 )
 
 var runRoleCmd = &cobra.Command{
-	Use:   "role <role-name>",
-	Short: "Run a single AI role by name.",
+	Use:   "role <model-key>",
+	Short: "Run a single AI role by model key (from config).",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		roleName := args[0]
+		modelKey := args[0]
 		inputStr, _ := cmd.Flags().GetString("input")
 
-		// Find the specified role
+		// Find the specified role by model key
 		var targetRole types.Role
 		foundRole := false
 		for _, role := range cfg.Roles {
-			if role.Name == roleName {
+			if role.Model == modelKey {
 				targetRole = role
 				foundRole = true
 				break
 			}
 		}
 		if !foundRole {
-			HandleError(errors.New(errors.ErrCodeRole, fmt.Sprintf("role '%s' not found in config", roleName), nil))
+			HandleError(errors.New(errors.ErrCodeRole, fmt.Sprintf("role with model key '%s' not found in config", modelKey), nil))
 		}
 
 		// Parse input string into a map
@@ -117,17 +117,8 @@ var runChainCmd = &cobra.Command{
 		chainName := args[0]
 		inputStr, _ := cmd.Flags().GetString("input")
 
-		// Find the specified chain
-		var targetChain types.RoleChain
-		foundChain := false
-		for _, chain := range cfg.Chains {
-			if chain.Name == chainName {
-				targetChain = chain
-				foundChain = true
-				break
-			}
-		}
-
+		// Find the specified chain (map lookup)
+		targetChain, foundChain := cfg.Chains[chainName]
 		if !foundChain {
 			HandleError(errors.New(errors.ErrCodeRole, fmt.Sprintf("role chain '%s' not found in config", chainName), nil))
 		}

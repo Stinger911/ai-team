@@ -17,12 +17,17 @@ func TestExecuteRole_Basic(t *testing.T) {
 	defer func() { ai.CallGeminiFunc = origCallGemini }()
 
 	role := types.Role{
-		Name:   "test-role",
 		Prompt: "You are a test role. Echo: {{.input}}",
 		Model:  "gemini-2.5-flash",
 	}
 	input := map[string]interface{}{"input": "hello"}
 	mockCfg := config.Config{}
+	mockCfg.Gemini.Apiurl = "http://mock-gemini"
+	mockCfg.Gemini.Models = map[string]config.ModelConfig{
+		"gemini-2.5-flash": {
+			Model: "gemini-2.5-flash",
+		},
+	}
 	output, err := ExecuteRole(role, input, mockCfg, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

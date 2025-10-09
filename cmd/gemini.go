@@ -5,11 +5,12 @@ import (
 	"net/http"
 
 	"ai-team/pkg/ai"
+
 	"github.com/spf13/cobra"
 )
 
+var geminiModelKey string
 var listGeminiModels bool
-
 var geminiCmd = &cobra.Command{
 	Use:   "gemini",
 	Short: "Use the Gemini model.",
@@ -17,9 +18,11 @@ var geminiCmd = &cobra.Command{
 		client := &http.Client{}
 
 		if listGeminiModels {
-			models, err := ai.ListGeminiModels(client, cfg.Gemini.APIURL, cfg.Gemini.APIKey)
+			apiKey := cfg.Gemini.Apikey
+			apiURL := cfg.Gemini.Apiurl
+			models, err := ai.ListGeminiModels(client, apiURL, apiKey)
 			if err != nil {
-				HandleError(err) // Use HandleError
+				HandleError(err)
 			}
 			fmt.Println("Available Gemini Models:")
 			for _, model := range models {
@@ -29,28 +32,35 @@ var geminiCmd = &cobra.Command{
 		}
 
 		task, _ := cmd.Flags().GetString("task")
-		if task == "" {
-			cmd.Help()
-			return
+		modelKey := geminiModelKey
+		if modelKey == "" {
+			HandleError(fmt.Errorf("--model flag is required"))
 		}
-
-		model := cfg.Gemini.Model
-		if model == "" {
-			// Default model if not specified in config
-			model = "gemini-pro" // Or another suitable default
+		modelCfg, ok := cfg.Gemini.Models[modelKey]
+		if !ok {
+			HandleError(fmt.Errorf("model key '%s' not found in config for Gemini", modelKey))
 		}
-
-		response, err := ai.CallGemini(client, task, model, cfg.Gemini.APIURL, cfg.Gemini.APIKey, cfg.Tools)
+		apiKey := modelCfg.Apikey
+		if apiKey == "" {
+			apiKey = cfg.Gemini.Apikey
+		}
+		apiURL := modelCfg.Apiurl
+		if apiURL == "" {
+			apiURL = cfg.Gemini.Apiurl
+		}
+		response, err := ai.CallGemini(client, task, modelCfg.Model, apiURL, apiKey, cfg.Tools)
 		if err != nil {
-			HandleError(err) // Use HandleError
+			HandleError(err)
 		}
 		fmt.Println("Response:", response)
 	},
 }
 
 func init() {
-	geminiCmd.Flags().StringVar(&cfg.Gemini.Model, "model", "", "The Gemini model to use (e.g., gemini-pro).")
+	geminiCmd.Flags().StringVar(&geminiModelKey, "model", "", "The Gemini model key to use (from config).")
 	geminiCmd.Flags().BoolVar(&listGeminiModels, "list-models", false, "List available Gemini models.")
 	geminiCmd.Flags().String("task", "", "The task to perform.")
+	geminiCmd.MarkFlagRequired("task")
+	geminiCmd.MarkFlagRequired("model")
 	rootCmd.AddCommand(geminiCmd)
 }

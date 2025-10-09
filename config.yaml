@@ -1,66 +1,95 @@
-LogFilePath: "role_calls.log"
-Gemini:
-  APIKey: "YOUR_GEMINI_API_KEY"
-  APIURL: "https://generativelanguage.googleapis.com"
-  Model: "gemini-pro"
-Tools:
-  - Name: "list_dir"
-    Description: "Lists contents of a directory."
-    CommandTemplate: "ls -la {{.path}}"
-    Arguments:
-      - Name: "path"
-        Type: "string"
-        Description: "The path to the directory."
-  - Name: "read_file"
-    Description: "Reads the content of a file."
-    CommandTemplate: "cat {{.file_path}}"
-    Arguments:
-      - Name: "file_path"
-        Type: "string"
-        Description: "The path to the file to read."
-Roles:
-  - Name: "architect"
-    Model: "gemini-pro"
-    Prompt: "You are an architect. Your task is to design a solution for the following problem: {{.problem}}. Output your design as a tool call to 'write_file'. The 'file_path' argument should be 'design.md'. The 'content' argument should be your markdown design, enclosed within <__AI_AGENT_CONTENT__> and <__AI_AGENT_CONTENT__> tags. Example: {\"tool_call\": {\"name\": \"write_file\", \"arguments\": {\"file_path\": \"design.md\", \"content\": \"<__AI_AGENT_CONTENT__># My Design...\n<__AI_AGENT_CONTENT__>\"}}}"
-  - Name: "coder"
-    Model: "gemini-pro"
-    Prompt: "You are a coder. Implement the following design: {{.design}}. Output your code as a tool call to 'write_file'. The 'file_path' argument should be 'code.go'. The 'content' argument should be your code in a markdown code block, enclosed within <__AI_AGENT_CONTENT__> and <__AI_AGENT_CONTENT__> tags. Example: {\"tool_call\": {\"name\": \"write_file\", \"arguments\": {\"file_path\": \"code.go\", \"content\": \"<__AI_AGENT_CONTENT__>```go\nfunc main()...\n```\n<__AI_AGENT_CONTENT__>\"}}}"
-  - Name: "tester"
-    Model: "gemini-pro"
-    Prompt: "You are a tester. Review the following code: {{.code}} and provide test cases. Output your test cases as a tool call to 'write_file'. The 'file_path' argument should be 'test_cases.md'. The 'content' argument should be your test cases in markdown, enclosed within <__AI_AGENT_CONTENT__> and <__AI_AGENT_CONTENT__> tags. Example: {\"tool_call\": {\"name\": \"write_file\", \"arguments\": {\"file_path\": \"test_cases.md\", \"content\": \"<__AI_AGENT_CONTENT__>## Test Cases...\n<__AI_AGENT_CONTENT__>\"}}}"
+log_file_path: "role_calls.log"
+openai:
+  default_apiurl: "https://api.openai.com/v1" # Default Provider-level URL
+  apikey: "YOUR_OPENAI_API_KEY" # Default Provider-level API key (can be overridden in model config)
+  models:
+    gpt-3.5-turbo-cloud: # Model name (unique identifier)
+      model: gpt-3.5-turbo
+      temperature: 0.7
+      #apiurl: # Inherits from provider default
+    gpt-4-code-focused: # Model name (unique identifier)
+      model: gpt-4
+      temperature: 0.2
+      max_tokens: 1000
+      #apikey: "ANOTHER_API_KEY_IF_NEEDED" # Override API key
+      #apiurl: "https://api.openai.com/v1" # Override API URL if needed
+    gpt-3.5-turbo-local: # Local OpenAI compatible model
+      model: gpt-3.5-turbo
+      temperature: 0.7
+      apiurl: "http://localhost:8000/v1" # Different base URL for local model
+      apikey: "NO_KEY_NEEDED" # can be overridden
 
-Chains:
-  - Name: "design-code-test"
-    Roles:
-      - Name: "architect"
-        Input:
-          problem: "{{.initial_problem}}"
-        OutputKey: "design"
-      - Name: "coder"
-        Input:
-          design: "{{.design}}"
-        OutputKey: "code"
-      - Name: "tester"
-        Input:
-          code: "{{.code}}"
-        OutputKey: "test_cases"
+gemini:
+  apikey: "YOUR_GEMINI_API_KEY" # Provider-level API key
+  apiurl: "https://generativeai.googleapis.com/v1" # Provider-level URL
+  models:
+    gemini-pro-standard: # Model name (unique identifier)
+      model: models/gemini-pro
+      temperature: 0.9
+    gemini-pro-creative: # Model name (unique identifier)
+      model: models/gemini-pro
+      temperature: 1.0
+      top_p: 0.9
 
-  # Example: Looping over a role to list a directory multiple times
-  - Name: "list-dir-loop"
-    Roles:
-      - Name: "list_dir_role"
-        Input:
-          path: "{{.target_path}}"
-        OutputKey: "dir_listing"
-        Loop: true
-        LoopCount: 3
+ollama:
+  apiurl: "http://localhost:11434" # Provider-level URL
+  models:
+    llama2-7b:
+      model: llama2:7b
+    codellama-34b:
+      model: codellama:34b
 
-  # Example: Looping over a role to read multiple files (AI must be prompted to use read_file tool)
-  - Name: "read-multi-files"
-    Roles:
-      - Name: "read_file_role"
-        Input:
-          file_path: "{{.file_path}}"
-        OutputKey: "file_content"
-        Loop: true
-        LoopCount: 2
+tools:
+  - name: "list_dir"
+    description: "Lists contents of a directory."
+    command_template: "ls -la {{.path}}"
+    arguments:
+      - name: "path"
+        type: "string"
+        description: "The path to the directory."
+  - name: "read_file"
+    description: "Reads the content of a file."
+    command_template: "cat {{.file_path}}"
+    arguments:
+      - name: "file_path"
+        type: "string"
+        description: "The path to the file to read."
+roles:
+  coder:
+    model_provider: openai
+    model_name: gpt-4-code-focused # Reference to model definition
+    prompt: "Write code for {{.task}}"
+  local_coder:
+    model_provider: openai
+    model_name: gpt-3.5-turbo-local # Reference to local model
+    prompt: "Write code (using local model) for {{.task}}"
+  writer:
+    model_provider: gemini
+    model_name: gemini-pro-creative
+    prompt: "Write documentation for {{.task}}"
+  architect:
+    model_provider: gemini
+    model_name: gemini-pro
+    prompt: "You are an architect. Your task is to design a solution for the following problem: {{.problem}}. Output your design as a tool call to 'write_file'. The 'file_path' argument should be 'design.md'. The 'content' argument should be your markdown design, enclosed within <__AI_AGENT_CONTENT__> and <__AI_AGENT_CONTENT__> tags. Example: {\"tool_call\": {\"name\": \"write_file\", \"arguments\": {\"file_path\": \"design.md\", \"content\": \"<__AI_AGENT_CONTENT__># My Design...\n<__AI_AGENT_CONTENT__>\"}}}"
+  tester:
+    model_provider: gemini
+    model_name: gemini-pro
+    prompt: "You are a tester. Review the following code: {{.code}} and provide test cases. Output your test cases as a tool call to 'write_file'. The 'file_path' argument should be 'test_cases.md'. The 'content' argument should be your test cases in markdown, enclosed within <__AI_AGENT_CONTENT__> and <__AI_AGENT_CONTENT__> tags. Example: {\"tool_call\": {\"name\": \"write_file\", \"arguments\": {\"file_path\": \"test_cases.md\", \"content\": \"<__AI_AGENT_CONTENT__>## Test Cases...\n<__AI_AGENT_CONTENT__>\"}}}"
+
+chains:
+  design-code-document:
+    steps:
+      - role: architect
+      - role: coder
+      - role: writer
+  design-code-test:
+    steps:
+      - role: architect
+      - role: coder
+      - role: tester
+  full-development:
+    steps:
+      - role: architect
+      - role: coder
+      - role: tester
+      - role: writer
