@@ -204,6 +204,66 @@ var (
 
 // executeToolCall executes the requested tool and returns its output.
 func executeToolCall(tc types.ToolCall, configurableTools []types.ConfigurableTool) (string, error) {
+	// Check for hardcoded tools first
+	switch tc.Name {
+	case "write_file":
+		filePath, ok := tc.Arguments["file_path"].(string)
+		if !ok {
+			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'file_path' for write_file", nil)
+		}
+		content, ok := tc.Arguments["content"].(string)
+		if !ok {
+			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'content' for write_file", nil)
+		}
+		logger.DebugPrintf("Calling WriteFileFunc with filePath: %s, content length: %d\n", filePath, len(content)) // Debug print
+		result, err := WriteFileFunc(filePath, content)
+		if err != nil {
+			logger.DebugPrintf("WriteFileFunc failed: %v\n", err)
+			return "", err
+		}
+		logger.DebugPrintf("WriteFileFunc succeeded: %s\n", result)
+		return result, nil
+	case "run_command":
+		command, ok := tc.Arguments["command"].(string)
+		if !ok {
+			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'command' for run_command", nil)
+		}
+		logger.DebugPrintf("Calling RunCommandFunc with command: %s\n", command) // Debug print
+		return RunCommandFunc(command)
+	case "apply_patch":
+		filePath, ok := tc.Arguments["file_path"].(string)
+		if !ok {
+			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'file_path' for apply_patch", nil)
+		}
+		patchContent, ok := tc.Arguments["patch_content"].(string)
+		if !ok {
+			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'patch_content' for apply_patch", nil)
+		}
+		logger.DebugPrintf("Calling ApplyPatchFunc with filePath: %s, patchContent length: %d\n", filePath, len(patchContent)) // Debug print
+		return ApplyPatchFunc(filePath, patchContent)
+	case "list_dir":
+		path, ok := tc.Arguments["path"].(string)
+		if !ok {
+			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'path' for list_dir", nil)
+		}
+		result, err := tools.ListDir(path)
+		if err != nil {
+			return "", err
+		}
+		// Return as JSON array string for consistency
+		jsonResult, _ := json.Marshal(result)
+		return string(jsonResult), nil
+	case "read_file":
+		filePath, ok := tc.Arguments["file_path"].(string)
+		if !ok {
+			return "", errors.New(errors.ErrCodeTool, "missing or invalid 'file_path' for read_file", nil)
+		}
+		result, err := tools.ReadFile(filePath)
+		if err != nil {
+			return "", err
+		}
+		return result, nil
+	}
 	logger.DebugPrintf("Executing tool call: %s with args: %v\n", tc.Name, tc.Arguments)
 
 	// Check for hardcoded tools first

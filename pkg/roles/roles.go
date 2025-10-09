@@ -272,7 +272,24 @@ func ExecuteChain(
 			}
 			// Store output in context if OutputKey is set (immediately after output is set)
 			if chainRole.OutputKey != "" {
-				context[chainRole.OutputKey] = output
+				// If lastToolResponse is from write_file and has content, store the content directly
+				if lastToolResponse != nil {
+					if respMap, ok := lastToolResponse.(map[string]interface{}); ok {
+						if content, ok := respMap["content"]; ok {
+							if strContent, ok := content.(string); ok && strContent != "" {
+								context[chainRole.OutputKey] = strContent
+							} else {
+								context[chainRole.OutputKey] = output
+							}
+						} else {
+							context[chainRole.OutputKey] = output
+						}
+					} else {
+						context[chainRole.OutputKey] = output
+					}
+				} else {
+					context[chainRole.OutputKey] = output
+				}
 			}
 		}
 	}

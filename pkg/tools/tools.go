@@ -148,6 +148,54 @@ type Tool interface {
 	Execute(args map[string]interface{}) (interface{}, error)
 }
 
+// ListDirTool implements the Tool interface for listing directory contents.
+type ListDirTool struct{}
+
+func (t *ListDirTool) Execute(args map[string]interface{}) (interface{}, error) {
+	path, ok := args["path"].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid arguments for ListDir: path required")
+	}
+	return ListDir(path)
+}
+
+// ListDir lists the contents of a directory and returns a slice of file/directory names.
+func ListDir(path string) ([]string, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, errors.New(errors.ErrCodeTool, fmt.Sprintf("failed to list directory %s", path), err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() {
+			name += "/"
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+// ReadFileTool implements the Tool interface for reading file contents.
+type ReadFileTool struct{}
+
+func (t *ReadFileTool) Execute(args map[string]interface{}) (interface{}, error) {
+	filePath, ok := args["file_path"].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid arguments for ReadFile: file_path required")
+	}
+	return ReadFile(filePath)
+}
+
+// ReadFile reads the contents of a file and returns it as a string.
+func ReadFile(filePath string) (string, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", errors.New(errors.ErrCodeTool, fmt.Sprintf("failed to read file %s", filePath), err)
+	}
+	return string(data), nil
+}
+
 // WriteFileTool implements the Tool interface for writing files.
 type WriteFileTool struct{}
 
@@ -185,6 +233,20 @@ func (t *ApplyPatchTool) Execute(args map[string]interface{}) (interface{}, erro
 
 // RegisterDefaultTools registers the built-in tools in the given registry.
 func RegisterDefaultTools(reg *ToolRegistry) {
+	reg.RegisterTool(ToolSchema{
+		Name:        "ReadFile",
+		Description: "Reads the contents of a file and returns it as a string.",
+		Arguments: []ToolArgument{
+			{Name: "file_path", Type: "string", Required: true, Description: "Path to the file to read."},
+		},
+	}, &ReadFileTool{})
+	reg.RegisterTool(ToolSchema{
+		Name:        "ListDir",
+		Description: "Lists the contents of a directory.",
+		Arguments: []ToolArgument{
+			{Name: "path", Type: "string", Required: true, Description: "Path to the directory to list."},
+		},
+	}, &ListDirTool{})
 	reg.RegisterTool(ToolSchema{
 		Name:        "WriteFile",
 		Description: "Writes content to a specified file.",
@@ -309,7 +371,7 @@ func WriteFile(filePath string, content string) (string, error) {
 	}
 	log.Infof("Successfully wrote to file: %s %d bytes", filePath, len(content))
 	log.Infof("Finished WriteFile")
-	return fmt.Sprintf("Successfully wrote to file: %s", filePath), nil
+	return content, nil
 }
 
 // RunCommand executes a shell command.

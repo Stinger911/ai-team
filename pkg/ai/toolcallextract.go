@@ -80,6 +80,22 @@ func parseToolCallJSON(jsonStr string) (*types.ToolCall, error) {
 // ExtractToolCall runs all handlers and returns the first valid tool-call.
 func (e *ToolCallExtractor) ExtractToolCall(s string) (*types.ToolCall, string, error) {
 	log := logrus.WithField("component", "ToolCallExtractor")
+
+	// 1. Try to parse the whole response as JSON (object or array)
+	var raw interface{}
+	if err := json.Unmarshal([]byte(s), &raw); err == nil {
+		// Recursively search for tool-call JSON in all string fields
+		if _, found := findToolCallInJSON(raw); found != nil {
+			log.Infof("Found tool-call in parsed JSON structure: tool=%s", found.Name)
+			if e.Registry != nil && e.Registry.ValidateToolCall(tools.ToolCall{Name: found.Name, Arguments: found.Arguments}) != nil {
+				log.Warnf("Schema validation failed for tool-call: %s", found.Name)
+			} else {
+				return found, "json_recursive", nil
+			}
+		}
+	}
+
+	// 2. Try all format handlers (legacy)
 	for _, h := range e.Handlers {
 		log.Debugf("Trying handler: %s", h.Name())
 		tc, err := h.Extract(s)
@@ -96,6 +112,32 @@ func (e *ToolCallExtractor) ExtractToolCall(s string) (*types.ToolCall, string, 
 	}
 	log.Warn("No valid tool-call found in response")
 	return nil, "", fmt.Errorf("no valid tool-call found")
+}
+
+// findToolCallInJSON recursively searches for a tool-call JSON string in all string fields of a JSON object/array.
+func findToolCallInJSON(v interface{}) (*types.ToolCall, *types.ToolCall) {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		for _, v2 := range val {
+			// If string, try to parse as tool-call
+			if s, ok := v2.(string); ok {
+				if tc, err := parseToolCallJSON(s); err == nil && tc != nil {
+					return tc, tc
+				}
+			} else {
+				if tc, found := findToolCallInJSON(v2); found != nil {
+					return tc, found
+				}
+			}
+		}
+	case []interface{}:
+		for _, item := range val {
+			if tc, found := findToolCallInJSON(item); found != nil {
+				return tc, found
+			}
+		}
+	}
+	return nil, nil
 }
 
 // NewDefaultToolCallExtractor returns a ToolCallExtractor with default handlers.
