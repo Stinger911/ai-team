@@ -5,3 +5,4 @@ ai-team
 ai-team-data/
 *.nogit.*
 *.log
+*.bak
