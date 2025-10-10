@@ -148,3 +148,79 @@ make build
 ```bash
 make clean
 ```
+
+## Recent changes: tool-call extraction & validation
+
+Small but important updates were made to make tool-call extraction and execution more tolerant and robust when AI model outputs vary in naming conventions or JSON formatting. Highlights:
+
+- The `ToolCallExtractor` now accepts multiple formats (inline JSON, JSON code blocks, and recursive JSON searches) and is constructed with a `ToolRegistry` so extraction uses the same schemas as execution.
+- The `ToolRegistry` and tools accept both camelCase and snake_case tool names and argument keys (for example `WriteFile` / `write_file`, `filePath` / `file_path`).
+- Argument lookup and validation are flexible: `lookupArgFlexible` matches case-insensitive, snake_case, and camelCase variants and tolerates JSON numeric types that represent integers.
+- Tests added to cover these behaviors: validation permutations, extractor registry usage, executor retry/timeout behavior, lookup variants, and negative/malformed-response cases. See `pkg/tools/*_test.go` and `pkg/ai/*_test.go`.
+
+These changes reduce false negatives like `"No valid tool-call found in response"` when the model returns valid but differently-formatted tool-call JSON.
+
+---
+
+## Prompting and Tool-Call Conventions
+
+When authoring role prompts (in `work.nogit.yaml` or `config.yaml`) follow these conventions to make tool calls reliable and machine-parseable:
+
+- Output only one JSON object per response when you mean to request a tool call. Avoid extra text, Markdown, or status messages.
+- Use snake_case for tool names and argument keys (the system is tolerant, but snake_case is canonical): `write_file`, `read_file`, `list_dir`, `run_command`, `apply_patch`.
+- The exact expected structure for tool calls is:
+
+  {"tool_call": {"name": "<tool_name>", "arguments": {<arg_key>: <arg_value>}}}
+
+- Example canonical tool calls:
+  - Write a file (preferred):
+    {"tool_call": {"name": "write_file", "arguments": {"file_path": "ai-team-data/design.md", "content": "# Design\n..."}}}
+  - Read a file:
+    {"tool_call": {"name": "read_file", "arguments": {"file_path": "ai-team-data/design.md"}}}
+  - List directory:
+    {"tool_call": {"name": "list_dir", "arguments": {"path": "."}}}
+  - Run a command:
+    {"tool_call": {"name": "run_command", "arguments": {"command": "go test ./..."}}}
+  - Apply a patch:
+    {"tool_call": {"name": "apply_patch", "arguments": {"file_path": "ai-team-data/design.md", "patch_content": "@@ -1 +1 @@\n-Old\n+New\n"}}}
+
+Tool-call extraction is robust (the extractor accepts inline JSON and JSON inside code blocks, and the registry tolerates common casing variants). Still, keeping to the canonical structure avoids ambiguity.
+
+### lastToolResponse
+
+When a role calls a tool and it is executed by the system, the next role invocation receives the execution result in its input under two fields:
+
+- `lastToolResponse`: the raw, structured result (map, list, string) when available.
+- `lastToolResponse_json`: the JSON stringified representation (useful for template rendering inside prompts that expect a string).
+
+Prompts can reference these in templates, for example:
+
+    - Use `{{.lastToolResponse_json}}` to inspect the previous tool output as a string.
+    - Use `{{if .lastToolResponse.error}}`...`{{end}}` to check for execution errors (when `lastToolResponse` contains an `error` key).
+
+### Looping and `loop_condition`
+
+Role chain steps can request iterative behavior by setting `loop: true` and a `loop_count`. To stop the loop early based on a runtime condition, set `loop_condition` to a Go template expression that evaluates to `true` or an equality expression after rendering.
+
+Examples:
+
+- Stop when the role returns a `write_file` tool call:
+  loop: true
+  loop_count: 10
+  loop_condition: "{{.tool_call.name}} == 'write_file'"
+
+Behavior:
+
+- After each iteration the system will render `loop_condition` against the current context (which includes `tool_call` when present) and evaluate simple forms:
+  - literal `true` / `false`
+  - equality `{{.a}} == 'b'` and inequality `{{.a}} != 'b'`
+- If the rendered condition evaluates to true, the loop stops early.
+- For safety the evaluator accepts only the simple forms above. If you need more complex expressions (numeric comparisons, logical AND/OR), let me know and I can extend the evaluator or add a small expression parser.
+
+### Prompt examples and guidance
+
+- Keep prompts concise and instruct the model to produce only the JSON tool_call object.
+- Provide canonical examples in the prompt to make format expectations explicit (we recommend including one or two minimal examples).
+- Use `lastToolResponse_json` in prompts when you want the model to reason about the previous tool call output as text.
+
+If you follow these rules, the extractor and tool executor will reliably detect and execute tool calls and pass results between roles in the chain.

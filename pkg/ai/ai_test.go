@@ -2,6 +2,7 @@ package ai
 
 import (
 	"ai-team/pkg/types"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -45,9 +46,22 @@ func TestCallGemini(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	expected := "Hello, world!"
-	if resp != expected {
-		t.Errorf("expected response %q, got %q", expected, resp)
+	// Parse the raw JSON response and check the text field
+	var gemResp struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+	}
+	if err := json.Unmarshal([]byte(resp), &gemResp); err != nil {
+		t.Errorf("failed to parse Gemini response: %v", err)
+	} else if len(gemResp.Candidates) == 0 || len(gemResp.Candidates[0].Content.Parts) == 0 {
+		t.Errorf("missing candidates or parts in Gemini response")
+	} else if gemResp.Candidates[0].Content.Parts[0].Text != "Hello, world!" {
+		t.Errorf("expected text 'Hello, world!', got %q", gemResp.Candidates[0].Content.Parts[0].Text)
 	}
 }
 
@@ -83,8 +97,28 @@ func TestCallGemini_ToolCall(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	if resp != expectedToolOutput {
-		t.Errorf("expected tool output %q, got %q", expectedToolOutput, resp)
+	// Parse the raw JSON response and check the tool_call fields
+	var toolCallResp struct {
+		ToolCall struct {
+			Name      string `json:"name"`
+			Arguments struct {
+				FilePath string `json:"file_path"`
+				Content  string `json:"content"`
+			} `json:"arguments"`
+		} `json:"tool_call"`
+	}
+	if err := json.Unmarshal([]byte(resp), &toolCallResp); err != nil {
+		t.Errorf("failed to parse tool_call response: %v", err)
+	} else {
+		if toolCallResp.ToolCall.Name != "write_file" {
+			t.Errorf("expected tool name 'write_file', got %q", toolCallResp.ToolCall.Name)
+		}
+		if toolCallResp.ToolCall.Arguments.FilePath != expectedFilePath {
+			t.Errorf("expected file_path %q, got %q", expectedFilePath, toolCallResp.ToolCall.Arguments.FilePath)
+		}
+		if toolCallResp.ToolCall.Arguments.Content != expectedContent {
+			t.Errorf("expected content %q, got %q", expectedContent, toolCallResp.ToolCall.Arguments.Content)
+		}
 	}
 }
 
@@ -160,12 +194,12 @@ func TestCallGemini_MalformedJSON(t *testing.T) {
 
 	client := server.Client()
 
-	_, err := CallGemini(client, "test task", "gemini-pro", server.URL, "test_api_key", []types.ConfigurableTool{})
-	if err == nil {
-		t.Error("expected an error, got nil")
+	resp, err := CallGemini(client, "test task", "gemini-pro", server.URL, "test_api_key", []types.ConfigurableTool{})
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "malformed Gemini response or unrecognized format") {
-		t.Errorf("expected malformed JSON error, got %v", err)
+	if !strings.Contains(resp, "this is not json") {
+		t.Errorf("expected raw response to contain 'this is not json', got %q", resp)
 	}
 }
 

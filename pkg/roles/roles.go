@@ -12,7 +12,6 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
-	"time"
 
 	"ai-team/pkg/logger"
 )
@@ -112,8 +111,10 @@ func ExecuteRole(
 		}
 	}
 
-	// Use ToolCallExtractor for robust extraction
-	extractor := ai.NewDefaultToolCallExtractor(nil)
+	// Use ToolCallExtractor for robust extraction with schema validation
+	toolRegistry := tools.NewToolRegistry()
+	tools.RegisterDefaultTools(toolRegistry)
+	extractor := ai.NewDefaultToolCallExtractor(toolRegistry)
 	tc, _, err := extractor.ExtractToolCall(response)
 	if err == nil && tc != nil {
 		// If a tool-call is found, return its JSON
@@ -143,12 +144,7 @@ func ExecuteChain(
 	// Initialize ToolRegistry and ToolExecutor for the chain
 	toolRegistry := tools.NewToolRegistry()
 	tools.RegisterDefaultTools(toolRegistry)
-	toolExecutor := &tools.ToolExecutor{
-		Registry:   toolRegistry,
-		Logger:     nil, // Use default logger or inject as needed
-		RetryCount: 1,
-		Timeout:    10 * time.Second,
-	}
+	// toolExecutor removed (was unused)
 
 	context := make(map[string]interface{})
 	for k, v := range initialInput {
@@ -198,76 +194,96 @@ func ExecuteChain(
 					roleInput[k] = v
 				}
 			}
-			// Inject most recent tool response
+
+			logger.DebugPrintf("Preparing to execute role: %s (loop %d/%d) with input: %v", roleKey, i+1, loopCount, roleInput)
+			// Inject lastToolResponse just before role execution, after any tool execution from previous step
+			roleInput["lastToolResponse"] = lastToolResponse
+			// Also provide a JSON-stringified version for easy templating in prompts
 			if lastToolResponse != nil {
-				roleInput["lastToolResponse"] = lastToolResponse
+				if b, err := json.Marshal(lastToolResponse); err == nil {
+					roleInput["lastToolResponse_json"] = string(b)
+				} else {
+					roleInput["lastToolResponse_json"] = fmt.Sprintf("%v", lastToolResponse)
+				}
+			} else {
+				roleInput["lastToolResponse_json"] = ""
 			}
 
 			logger.DebugPrintf("Executing role: %s (loop %d/%d) with input: %v", roleKey, i+1, loopCount, roleInput)
-			rawOutput, err := ExecuteRole(roleDef, roleInput, cfg, logFilePath)
-			// Use ToolCallExtractor for robust extraction
-			extractor := ai.NewDefaultToolCallExtractor(nil)
-			tc, _, errExtract := extractor.ExtractToolCall(rawOutput)
+			rawOutput, _ := ExecuteRole(roleDef, roleInput, cfg, logFilePath)
+			// Try to extract tool call from Gemini response's text field if present
+			var toolCallText string
 			var output string
+			// Try to parse as Gemini response
+			type geminiPart struct {
+				Text string `json:"text"`
+			}
+			type geminiContent struct {
+				Parts []geminiPart `json:"parts"`
+			}
+			type geminiCandidate struct {
+				Content geminiContent `json:"content"`
+			}
+			type geminiResponse struct {
+				Candidates []geminiCandidate `json:"candidates"`
+			}
+			var gemResp geminiResponse
+			if err := json.Unmarshal([]byte(rawOutput), &gemResp); err == nil && len(gemResp.Candidates) > 0 && len(gemResp.Candidates[0].Content.Parts) > 0 {
+				toolCallText = gemResp.Candidates[0].Content.Parts[0].Text
+			} else {
+				toolCallText = rawOutput
+			}
+			extractor := ai.NewDefaultToolCallExtractor(toolRegistry)
+			tc, _, errExtract := extractor.ExtractToolCall(toolCallText)
 			if errExtract == nil && tc != nil {
 				b, _ := json.Marshal(tc)
 				output = string(b)
+				// expose the parsed tool_call in the context for loop_condition templates
+				context["tool_call"] = map[string]interface{}{"name": tc.Name, "arguments": tc.Arguments}
+				// Inline tool execution logic
+				toolExecutor := &tools.ToolExecutor{
+					Registry:   toolRegistry,
+					Logger:     nil,
+					RetryCount: 1,
+					Timeout:    0,
+				}
+				call := tools.ToolCall{
+					Name:      tc.Name,
+					Arguments: tc.Arguments,
+				}
+				result, err := toolExecutor.Execute(call)
+				if err != nil {
+					lastToolResponse = map[string]interface{}{
+						"error":      "tool execution failed",
+						"tool":       tc.Name,
+						"exec_error": err.Error(),
+					}
+				} else {
+					lastToolResponse = result
+				}
+				logger.DebugPrintf("[Chain] lastToolResponse after executing tool %s: %v", tc.Name, lastToolResponse)
 			} else {
 				// Fallback: extract first JSON object (legacy)
-				output = rawOutput
-				start := strings.Index(rawOutput, "{")
-				end := strings.LastIndex(rawOutput, "}")
+				output = toolCallText
+				start := strings.Index(toolCallText, "{")
+				end := strings.LastIndex(toolCallText, "}")
 				if start != -1 && end != -1 && end > start {
-					output = rawOutput[start : end+1]
+					output = toolCallText[start : end+1]
 				}
-			}
-			if err != nil {
-				logger.DebugPrintf("Failed to execute role %s in chain: %v", roleKey, err)
-				// Log the failed role call
-				if logFilePath != "" {
-					logEntry := types.RoleCallLogEntry{
-						RoleName: roleKey,
-						Input:    roleInput,
-						Output:   output,
-						Error:    err.Error(),
-					}
-					_ = logger.LogRoleCall(logFilePath, logEntry)
+				// Try to parse as a legacy tool call (file_path/content)
+				var fileObj struct {
+					FilePath string `json:"file_path"`
+					Content  string `json:"content"`
 				}
-				return nil, errors.New(errors.ErrCodeRole, "failed to execute role "+roleKey+" in chain", err)
-			}
-
-			// Try to execute a normal tool call if present (use rawOutput)
-			var toolCallObj struct {
-				ToolName  string                 `json:"tool_name"`
-				Arguments map[string]interface{} `json:"arguments"`
-			}
-			toolCallErr := json.Unmarshal([]byte(rawOutput), &toolCallObj)
-			if toolCallErr == nil && toolCallObj.ToolName != "" {
-				logger.DebugPrintf("[ToolCall] Executing tool: %s", toolCallObj.ToolName)
-				lastToolResponse = executeConfiguredTool(toolCallObj.ToolName, toolCallObj.Arguments, toolRegistry, toolExecutor)
-			} else {
-				// Try tool_call (Gemini style, use rawOutput)
-				var toolCallWrap struct {
-					ToolCall struct {
-						Name      string                 `json:"name"`
-						Arguments map[string]interface{} `json:"arguments"`
-					} `json:"tool_call"`
-				}
-				if err := json.Unmarshal([]byte(rawOutput), &toolCallWrap); err == nil && toolCallWrap.ToolCall.Name != "" {
-					logger.DebugPrintf("[ToolCallWrap] Executing tool: %s", toolCallWrap.ToolCall.Name)
-					lastToolResponse = executeConfiguredTool(toolCallWrap.ToolCall.Name, toolCallWrap.ToolCall.Arguments, toolRegistry, toolExecutor)
+				if err := json.Unmarshal([]byte(output), &fileObj); err == nil && fileObj.FilePath != "" {
+					logger.DebugPrintf("[Fallback] fileObj: file_path=%s, content-len=%d", fileObj.FilePath, len(fileObj.Content))
+					logger.DebugPrintf("[Fallback] Writing file: %s", fileObj.FilePath)
+					_, _ = tools.WriteFile(fileObj.FilePath, fileObj.Content)
+					lastToolResponse = map[string]interface{}{"file_path": fileObj.FilePath, "content": fileObj.Content}
 				} else {
-					// Fallback: if output is a JSON object with file_path and content, write the file (use extractFirstJSON output)
-					var fileObj struct {
-						FilePath string `json:"file_path"`
-						Content  string `json:"content"`
-					}
-					if err := json.Unmarshal([]byte(output), &fileObj); err == nil && fileObj.FilePath != "" {
-						logger.DebugPrintf("[Fallback] fileObj: file_path=%s, content-len=%d", fileObj.FilePath, len(fileObj.Content))
-						logger.DebugPrintf("[Fallback] Writing file: %s", fileObj.FilePath)
-						_, _ = tools.WriteFile(fileObj.FilePath, fileObj.Content)
-						lastToolResponse = map[string]interface{}{"file_path": fileObj.FilePath, "content": fileObj.Content}
-					}
+					lastToolResponse = nil
+					// clear any tool_call context when no tool was found
+					delete(context, "tool_call")
 				}
 			}
 			// Store output in context if OutputKey is set (immediately after output is set)
@@ -291,52 +307,22 @@ func ExecuteChain(
 					context[chainRole.OutputKey] = output
 				}
 			}
+			logger.DebugPrintf("[Chain] lastToolResponse after executing tool %s: %v", roleKey, lastToolResponse)
+
+			// If a loop condition is provided on the chain role, evaluate it now. If it evaluates
+			// to true, break out of the inner loop early.
+			if chainRole.LoopCondition != "" {
+				ok, err := evaluateLoopCondition(chainRole.LoopCondition, context)
+				if err != nil {
+					logger.DebugPrintf("Failed to evaluate loop_condition '%s': %v", chainRole.LoopCondition, err)
+				} else if ok {
+					logger.DebugPrintf("Loop condition evaluated true, breaking loop for role %s", roleKey)
+					break
+				}
+			}
 		}
 	}
 	return context, nil
-}
-
-// extractFirstJSON extracts the first JSON object from a string, handling markdown code blocks.
-func extractFirstJSON(s string) string {
-	if strings.HasPrefix(s, "```json") {
-		s = strings.TrimPrefix(s, "```json")
-		s = strings.TrimSpace(s)
-	}
-	if strings.HasPrefix(s, "```") {
-		s = strings.TrimPrefix(s, "```")
-		s = strings.TrimSpace(s)
-	}
-	start := strings.Index(s, "{")
-	end := strings.LastIndex(s, "}")
-	if start != -1 && end != -1 && end > start {
-		return s[start : end+1]
-	}
-	return s
-}
-
-// executeConfiguredTool executes a tool by name from the list of configurable tools.
-// Refactored: executeConfiguredTool uses ToolRegistry and ToolExecutor for robust orchestration.
-func executeConfiguredTool(toolName string, args map[string]interface{}, reg *tools.ToolRegistry, exec *tools.ToolExecutor) interface{} {
-	call := tools.ToolCall{
-		Name:      toolName,
-		Arguments: args,
-	}
-	if err := reg.ValidateToolCall(call); err != nil {
-		return map[string]interface{}{
-			"error":            "tool call validation failed",
-			"tool":             toolName,
-			"validation_error": err.Error(),
-		}
-	}
-	result, err := exec.Execute(call)
-	if err != nil {
-		return map[string]interface{}{
-			"error":      "tool execution failed",
-			"tool":       toolName,
-			"exec_error": err.Error(),
-		}
-	}
-	return result
 }
 
 // keys returns the keys of a map[string]T as a []string
@@ -346,4 +332,47 @@ func keys[T any](m map[string]T) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// evaluateLoopCondition renders the loop_condition template using the provided context
+// and evaluates simple expressions. Supported forms after rendering:
+//   - "true" / "false" (case-insensitive)
+//   - "<left> == '<right>'" or "<left> != '<right>'"
+//
+// For equality checks, surrounding quotes are optional for the right-hand side.
+func evaluateLoopCondition(condTemplate string, context map[string]interface{}) (bool, error) {
+	// Render template
+	tmpl, err := template.New("loop_condition").Parse(condTemplate)
+	if err != nil {
+		return false, err
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, context); err != nil {
+		return false, err
+	}
+	rendered := strings.TrimSpace(buf.String())
+	lower := strings.ToLower(rendered)
+	if lower == "true" {
+		return true, nil
+	}
+	if lower == "false" || rendered == "" {
+		return false, nil
+	}
+	// try equality / inequality
+	if strings.Contains(rendered, "==") {
+		parts := strings.SplitN(rendered, "==", 2)
+		left := strings.TrimSpace(parts[0])
+		right := strings.TrimSpace(parts[1])
+		right = strings.Trim(right, " \"'")
+		return left == right, nil
+	}
+	if strings.Contains(rendered, "!=") {
+		parts := strings.SplitN(rendered, "!=", 2)
+		left := strings.TrimSpace(parts[0])
+		right := strings.TrimSpace(parts[1])
+		right = strings.Trim(right, " \"'")
+		return left != right, nil
+	}
+	// not recognized -> false
+	return false, nil
 }

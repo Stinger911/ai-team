@@ -87,8 +87,17 @@ func (e *ToolCallExtractor) ExtractToolCall(s string) (*types.ToolCall, string, 
 		// Recursively search for tool-call JSON in all string fields
 		if _, found := findToolCallInJSON(raw); found != nil {
 			log.Infof("Found tool-call in parsed JSON structure: tool=%s", found.Name)
-			if e.Registry != nil && e.Registry.ValidateToolCall(tools.ToolCall{Name: found.Name, Arguments: found.Arguments}) != nil {
-				log.Warnf("Schema validation failed for tool-call: %s", found.Name)
+			// Normalize payload before validation to canonical names (snake_case lower)
+			norm := normalizeToolCall(found)
+			log.Debugf("Original tool-call: name=%s args=%+v", found.Name, found.Arguments)
+			log.Debugf("Normalized tool-call: name=%s args=%+v", norm.Name, norm.Arguments)
+			if e.Registry != nil {
+				if err := e.Registry.ValidateToolCall(tools.ToolCall{Name: norm.Name, Arguments: norm.Arguments}); err != nil {
+					log.Warnf("Schema validation failed for tool-call: %s: %v", norm.Name, err)
+				} else {
+					// return original shape for downstream but indicate we used normalized name for validation
+					return found, "json_recursive", nil
+				}
 			} else {
 				return found, "json_recursive", nil
 			}
@@ -101,9 +110,15 @@ func (e *ToolCallExtractor) ExtractToolCall(s string) (*types.ToolCall, string, 
 		tc, err := h.Extract(s)
 		if err == nil && tc != nil {
 			log.Infof("Handler '%s' succeeded: tool=%s", h.Name(), tc.Name)
-			if e.Registry != nil && e.Registry.ValidateToolCall(tools.ToolCall{Name: tc.Name, Arguments: tc.Arguments}) != nil {
-				log.Warnf("Schema validation failed for tool-call: %s", tc.Name)
-				continue // schema validation failed
+			// Normalize before validation
+			norm := normalizeToolCall(tc)
+			log.Debugf("Original tool-call (handler %s): name=%s args=%+v", h.Name(), tc.Name, tc.Arguments)
+			log.Debugf("Normalized tool-call (handler %s): name=%s args=%+v", h.Name(), norm.Name, norm.Arguments)
+			if e.Registry != nil {
+				if errVal := e.Registry.ValidateToolCall(tools.ToolCall{Name: norm.Name, Arguments: norm.Arguments}); errVal != nil {
+					log.Warnf("Schema validation failed for tool-call: %s: %v", norm.Name, errVal)
+					continue // schema validation failed
+				}
 			}
 			return tc, h.Name(), nil
 		} else if err != nil {
@@ -150,4 +165,40 @@ func NewDefaultToolCallExtractor(reg *tools.ToolRegistry) *ToolCallExtractor {
 		},
 		Registry: reg,
 	}
+}
+
+// normalizeToolCall produces a normalized copy of a ToolCall with the tool name
+// converted to snake_case lowercase and argument keys converted to snake_case
+// lowercase. This helps matching tool names/args against registry schemas which
+// may be registered in snake_case or camelCase variants.
+func normalizeToolCall(tc *types.ToolCall) *types.ToolCall {
+	if tc == nil {
+		return nil
+	}
+	norm := &types.ToolCall{
+		Name:      toSnakeCaseLocal(tc.Name),
+		Arguments: make(map[string]interface{}),
+	}
+	for k, v := range tc.Arguments {
+		nk := toSnakeCaseLocal(k)
+		// lower-case the key for extra tolerance
+		nk = strings.ToLower(nk)
+		// if key already set, prefer existing (do not overwrite)
+		if _, exists := norm.Arguments[nk]; !exists {
+			norm.Arguments[nk] = v
+		}
+	}
+	return norm
+}
+
+// toSnakeCaseLocal converts CamelCase or camelCase or snake_case to snake_case.
+func toSnakeCaseLocal(s string) string {
+	var out []rune
+	for i, r := range s {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			out = append(out, '_')
+		}
+		out = append(out, r)
+	}
+	return strings.ToLower(string(out))
 }

@@ -152,9 +152,14 @@ type Tool interface {
 type ListDirTool struct{}
 
 func (t *ListDirTool) Execute(args map[string]interface{}) (interface{}, error) {
-	path, ok := args["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid arguments for ListDir: path required")
+	// Accept both "path" and "directory" as valid argument keys
+	var path string
+	if p, ok := args["path"].(string); ok {
+		path = p
+	} else if d, ok := args["directory"].(string); ok {
+		path = d
+	} else {
+		return nil, fmt.Errorf("invalid arguments for ListDir: path or directory required")
 	}
 	return ListDir(path)
 }
@@ -200,9 +205,37 @@ func ReadFile(filePath string) (string, error) {
 type WriteFileTool struct{}
 
 func (t *WriteFileTool) Execute(args map[string]interface{}) (interface{}, error) {
-	filePath, ok1 := args["filePath"].(string)
+	// Accept both "filePath" and "file_path" (and case variants)
+	var filePath string
+	if v, ok := args["filePath"].(string); ok {
+		filePath = v
+	} else if v, ok := args["file_path"].(string); ok {
+		filePath = v
+	} else {
+		// try case-insensitive lookup
+		for k, val := range args {
+			if strings.EqualFold(k, "filePath") || strings.EqualFold(k, "file_path") {
+				if s, ok := val.(string); ok {
+					filePath = s
+					break
+				}
+			}
+		}
+	}
 	content, ok2 := args["content"].(string)
-	if !ok1 || !ok2 {
+	if !ok2 {
+		// try case-insensitive lookup
+		for k, val := range args {
+			if strings.EqualFold(k, "content") {
+				if s, ok := val.(string); ok {
+					content = s
+					ok2 = true
+					break
+				}
+			}
+		}
+	}
+	if filePath == "" || !ok2 {
 		return nil, fmt.Errorf("invalid arguments for WriteFile: filePath and content required")
 	}
 	return WriteFile(filePath, content)
@@ -240,18 +273,38 @@ func RegisterDefaultTools(reg *ToolRegistry) {
 			{Name: "file_path", Type: "string", Required: true, Description: "Path to the file to read."},
 		},
 	}, &ReadFileTool{})
+	// Register both 'ListDir' and 'list_dir' for compatibility with model output
 	reg.RegisterTool(ToolSchema{
 		Name:        "ListDir",
 		Description: "Lists the contents of a directory.",
 		Arguments: []ToolArgument{
-			{Name: "path", Type: "string", Required: true, Description: "Path to the directory to list."},
+			{Name: "path", Type: "string", Required: false, Description: "Path to the directory to list."},
+			{Name: "directory", Type: "string", Required: false, Description: "Directory to list (alias for path)."},
 		},
 	}, &ListDirTool{})
+	reg.RegisterTool(ToolSchema{
+		Name:        "list_dir",
+		Description: "Lists the contents of a directory.",
+		Arguments: []ToolArgument{
+			{Name: "path", Type: "string", Required: false, Description: "Path to the directory to list."},
+			{Name: "directory", Type: "string", Required: false, Description: "Directory to list (alias for path)."},
+		},
+	}, &ListDirTool{})
+
+	// WriteFile (camelCase and snake_case)
 	reg.RegisterTool(ToolSchema{
 		Name:        "WriteFile",
 		Description: "Writes content to a specified file.",
 		Arguments: []ToolArgument{
 			{Name: "filePath", Type: "string", Required: true, Description: "Path to the file to write."},
+			{Name: "content", Type: "string", Required: true, Description: "Content to write."},
+		},
+	}, &WriteFileTool{})
+	reg.RegisterTool(ToolSchema{
+		Name:        "write_file",
+		Description: "Writes content to a specified file.",
+		Arguments: []ToolArgument{
+			{Name: "file_path", Type: "string", Required: true, Description: "Path to the file to write."},
 			{Name: "content", Type: "string", Required: true, Description: "Content to write."},
 		},
 	}, &WriteFileTool{})
@@ -289,7 +342,8 @@ func (r *ToolRegistry) ValidateToolCall(call ToolCall) error {
 	}
 	// Check required arguments and types
 	for _, arg := range schema.Arguments {
-		val, exists := call.Arguments[arg.Name]
+		// flexible lookup: exact key, snake_case, camelCase, case-insensitive
+		val, exists := lookupArgFlexible(call.Arguments, arg.Name)
 		if arg.Required && !exists {
 			return fmt.Errorf("missing required argument '%s' for tool '%s'", arg.Name, call.Name)
 		}
@@ -301,6 +355,13 @@ func (r *ToolRegistry) ValidateToolCall(call ToolCall) error {
 				}
 			case "int":
 				if _, ok := val.(int); !ok {
+					// JSON numbers may be float64 when unmarshaled
+					if f, okf := val.(float64); okf {
+						// allow float that is integer-valued
+						if f == float64(int(f)) {
+							continue
+						}
+					}
 					return fmt.Errorf("argument '%s' for tool '%s' must be int", arg.Name, call.Name)
 				}
 			case "bool":
@@ -312,6 +373,55 @@ func (r *ToolRegistry) ValidateToolCall(call ToolCall) error {
 		}
 	}
 	return nil
+}
+
+// lookupArgFlexible searches arguments map for a key matching requested name with
+// case-insensitive and snake/camel variants. Returns value and whether found.
+func lookupArgFlexible(args map[string]interface{}, name string) (interface{}, bool) {
+	// exact match
+	if v, ok := args[name]; ok {
+		return v, true
+	}
+	// snake_case <-> camelCase
+	snake := toSnakeCase(name)
+	camel := toCamelCase(name)
+	// try common variants
+	for _, k := range []string{name, snake, camel} {
+		for existingKey, v := range args {
+			if strings.EqualFold(existingKey, k) {
+				return v, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func toSnakeCase(s string) string {
+	// simple conversion: CamelCase -> snake_case
+	var out []rune
+	for i, r := range s {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			out = append(out, '_')
+		}
+		out = append(out, r)
+	}
+	return strings.ToLower(string(out))
+}
+
+func toCamelCase(s string) string {
+	// simple conversion: snake_case -> camelCase
+	parts := strings.Split(s, "_")
+	if len(parts) == 0 {
+		return s
+	}
+	out := parts[0]
+	for _, p := range parts[1:] {
+		if p == "" {
+			continue
+		}
+		out += strings.ToUpper(p[:1]) + strings.ToLower(p[1:])
+	}
+	return out
 }
 
 // ToolSchema defines the schema for a tool, including its name, description, and arguments.
