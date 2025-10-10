@@ -23,6 +23,7 @@ var runRoleCmd = &cobra.Command{
 		inputStr, _ := cmd.Flags().GetString("input")
 
 		// Find the specified role by model key
+		// TODO: implement interactive CLI		
 		var targetRole types.Role
 		foundRole := false
 		for _, role := range cfg.Roles {
@@ -36,12 +37,13 @@ var runRoleCmd = &cobra.Command{
 			HandleError(errors.New(errors.ErrCodeRole, fmt.Sprintf("role with model key '%s' not found in config", modelKey), nil))
 		}
 
-		// Parse input string into a map
+		// Parse input string into a map for role command
+		// TODO: implement interactive CLI for role command
 		roleInput := make(map[string]interface{})
 		if inputStr != "" {
 			parts := strings.Split(inputStr, "=")
 			if len(parts) == 2 {
-				roleInput[parts[0]] = parts[1]
+				roleInput[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 			} else {
 				HandleError(errors.New(errors.ErrCodeRole, "invalid input format. Expected key=value", nil))
 			}
@@ -123,12 +125,13 @@ var runChainCmd = &cobra.Command{
 			HandleError(errors.New(errors.ErrCodeRole, fmt.Sprintf("role chain '%s' not found in config", chainName), nil))
 		}
 
-		// Parse input string into a map
+		// Parse input string into a map for chain command
+		// TODO: implement interactive CLI for chain command
 		initialInput := make(map[string]interface{})
 		if inputStr != "" {
 			parts := strings.Split(inputStr, "=")
 			if len(parts) == 2 {
-				initialInput[parts[0]] = parts[1]
+				initialInput[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 			} else {
 				HandleError(errors.New(errors.ErrCodeRole, "invalid input format. Expected key=value", nil))
 			}
