@@ -25,9 +25,12 @@ func TestCallOpenAI(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	expected := "Hello, world!"
-	if resp != expected {
-		t.Errorf("expected response %q, got %q", expected, resp)
+	// Parse raw response and verify the choices text
+	var openResp types.OpenAIResponse
+	if err := json.Unmarshal([]byte(resp), &openResp); err != nil {
+		t.Errorf("failed to parse OpenAI raw response: %v", err)
+	} else if len(openResp.Choices) == 0 || openResp.Choices[0].Text != "Hello, world!" {
+		t.Errorf("expected choice text 'Hello, world!', got %+v", openResp)
 	}
 }
 
@@ -234,8 +237,13 @@ func TestCallOllama(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	expected := "Hello, world!"
-	if resp != expected {
-		t.Errorf("expected response %q, got %q", expected, resp)
+	// Parse raw response body and check for the 'response' field
+	var or struct {
+		Response string `json:"response"`
+	}
+	if err := json.Unmarshal([]byte(resp), &or); err != nil {
+		t.Errorf("failed to parse Ollama raw response: %v", err)
+	} else if or.Response != "Hello, world!" {
+		t.Errorf("expected response 'Hello, world!', got %q", or.Response)
 	}
 }

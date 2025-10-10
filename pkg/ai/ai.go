@@ -64,7 +64,7 @@ var CallGeminiFunc = CallGemini
 
 func CallOpenAI(client *http.Client, task string, apiURL string, apiKey string) (string, error) {
 	logrus.Info("Calling OpenAI API...")
-
+	// Construct a simple request body (keep it flexible -- callers can pass a provider-specific apiURL)
 	requestBody := strings.NewReader(`{
 		"model": "text-davinci-003",
 		"prompt": "` + task + `",
@@ -85,16 +85,27 @@ func CallOpenAI(client *http.Client, task string, apiURL string, apiKey string) 
 	}
 	defer resp.Body.Close()
 
-	var openAIResp types.OpenAIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&openAIResp); err != nil {
-		return "", errors.New(errors.ErrCodeAPI, "failed to decode openai response", err)
+	bodyBytes, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return "", errors.New(errors.ErrCodeAPI, "failed to read openai response body", readErr)
 	}
 
-	if len(openAIResp.Choices) > 0 {
-		return openAIResp.Choices[0].Text, nil
+	// If non-200, try to surface an API error message
+	if resp.StatusCode != http.StatusOK {
+		var apiErr struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&apiErr); err == nil && apiErr.Error.Message != "" {
+			return "", errors.New(errors.ErrCodeAPI, fmt.Sprintf("OpenAI API error: %s", apiErr.Error.Message), nil)
+		}
+		return "", errors.New(errors.ErrCodeAPI, fmt.Sprintf("OpenAI API returned status %d", resp.StatusCode), nil)
 	}
 
-	return "", errors.New(errors.ErrCodeAPI, "no response from openai", nil)
+	bodyString := string(bodyBytes)
+	logger.DebugPrintf("Raw OpenAI response: %s", bodyString)
+	return bodyString, nil
 }
 
 func CallGemini(client *http.Client, task string, model string, apiURL string, apiKey string, configurableTools []types.ConfigurableTool) (string, error) {
@@ -206,12 +217,19 @@ func CallOllama(client *http.Client, task string, apiURL string, model string, t
 		return "", errors.New(errors.ErrCodeAPI, "failed to read ollama response body", readErr)
 	}
 	logger.DebugPrintf("Ollama response body: %s", string(bodyBytes))
-	var ollamaResp types.OllamaResponse
-	if err := json.Unmarshal(bodyBytes, &ollamaResp); err != nil {
-		return "", errors.New(errors.ErrCodeAPI, "failed to decode ollama response", err)
+
+	if resp.StatusCode != http.StatusOK {
+		// Try to decode a possible structured error
+		var apiErr struct {
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&apiErr); err == nil && apiErr.Error != "" {
+			return "", errors.New(errors.ErrCodeAPI, fmt.Sprintf("Ollama API error: %s", apiErr.Error), nil)
+		}
+		return "", errors.New(errors.ErrCodeAPI, fmt.Sprintf("Ollama API returned status %d", resp.StatusCode), nil)
 	}
 
-	return ollamaResp.Response, nil
+	return string(bodyBytes), nil
 }
 
 // ListGeminiModels lists available Gemini models.
