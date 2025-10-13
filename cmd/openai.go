@@ -4,16 +4,24 @@ import (
 	"fmt"
 	"net/http"
 
+	"ai-team/config"
 	"ai-team/pkg/ai"
 
 	"github.com/spf13/cobra"
 )
 
 var openaiModelKey string
+
 var openaiCmd = &cobra.Command{
 	Use:   "openai",
 	Short: "Use the OpenAI model.",
 	Run: func(cmd *cobra.Command, args []string) {
+		var err error
+		cfg, err = config.LoadConfig(cfgFile)
+		if err != nil {
+			HandleError(err)
+		}
+
 		task, _ := cmd.Flags().GetString("task")
 		modelKey := openaiModelKey
 		if modelKey == "" {

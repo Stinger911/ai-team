@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"ai-team/config"
 	"ai-team/pkg/ai"
 
 	"github.com/spf13/cobra"
@@ -11,10 +12,17 @@ import (
 
 var geminiModelKey string
 var listGeminiModels bool
+
 var geminiCmd = &cobra.Command{
 	Use:   "gemini",
 	Short: "Use the Gemini model.",
 	Run: func(cmd *cobra.Command, args []string) {
+		var err error
+		cfg, err = config.LoadConfig(cfgFile)
+		if err != nil {
+			HandleError(err)
+		}
+
 		client := &http.Client{}
 
 		if listGeminiModels {

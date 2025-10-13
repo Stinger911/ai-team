@@ -4,16 +4,24 @@ import (
 	"fmt"
 	"net/http"
 
+	"ai-team/config"
 	"ai-team/pkg/ai"
 
 	"github.com/spf13/cobra"
 )
 
 var ollamaModelKey string
+
 var ollamaCmd = &cobra.Command{
 	Use:   "ollama",
 	Short: "Use the Ollama model.",
 	Run: func(cmd *cobra.Command, args []string) {
+		var err error
+		cfg, err = config.LoadConfig(cfgFile)
+		if err != nil {
+			HandleError(err)
+		}
+
 		task, _ := cmd.Flags().GetString("task")
 		modelKey := ollamaModelKey
 		if modelKey == "" {
