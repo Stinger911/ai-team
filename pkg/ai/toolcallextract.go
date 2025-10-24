@@ -22,6 +22,10 @@ func (h *YAMLHandler) Extract(s string) (*types.ToolCall, error) {
 	return nil, fmt.Errorf("YAML handler not implemented")
 }
 
+type ToolCallExtractorInterface interface {
+	ExtractToolCall(s string) (*types.ToolCall, string, error)
+}
+
 // ToolCallExtractor provides robust extraction of tool-calls from AI responses.
 type ToolCallExtractor struct {
 	Handlers []ToolCallFormatHandler
@@ -156,7 +160,7 @@ func findToolCallInJSON(v interface{}) (*types.ToolCall, *types.ToolCall) {
 }
 
 // NewDefaultToolCallExtractor returns a ToolCallExtractor with default handlers.
-func NewDefaultToolCallExtractor(reg *tools.ToolRegistry) *ToolCallExtractor {
+func NewDefaultToolCallExtractor(reg *tools.ToolRegistry) ToolCallExtractorInterface {
 	return &ToolCallExtractor{
 		Handlers: []ToolCallFormatHandler{
 			&JSONCodeBlockHandler{},

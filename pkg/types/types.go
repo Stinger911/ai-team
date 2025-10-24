@@ -1,5 +1,7 @@
 package types
 
+import "time"
+
 // OpenAIResponse represents the JSON response from the OpenAI API.
 type OpenAIResponse struct {
 	Choices []struct {
@@ -108,6 +110,21 @@ type RoleCallLogEntry struct {
 	Input     map[string]interface{} `json:"input"`
 	Output    string                 `json:"output"`
 	Error     string                 `json:"error,omitempty"`
+}
+
+// Transcript represents a session transcript.
+type Transcript struct {
+	Role      string    `json:"role"`
+	StartedAt time.Time `json:"started_at"`
+	Steps     []Step    `json:"steps"`
+}
+
+// Step represents a single step in a transcript.
+type Step struct {
+	LlmOutput string      `json:"llm_output"`
+	ToolCall  *ToolCall   `json:"tool_call"`
+	Approved  bool        `json:"approved"`
+	Result    interface{} `json:"result"`
 }
 
 // Config represents the loaded YAML config (for reference, not used in main code)

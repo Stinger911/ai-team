@@ -18,7 +18,9 @@ import (
 
 // DefaultUI is the default implementation of the UI interface.
 
-type DefaultUI struct{}
+type DefaultUI struct{
+	Editor string
+}
 
 // PromptSelect prompts the user to select an option from a list.
 
@@ -81,12 +83,12 @@ func (ui *DefaultUI) Confirm(prompt string) (bool, error) {
 
 func (ui *DefaultUI) OpenEditor(content string) (string, error) {
 
-	editor := os.Getenv("EDITOR")
-
+	editor := ui.Editor
 	if editor == "" {
-
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
 		editor = "vim"
-
 	}
 
 	file, err := ioutil.TempFile(os.TempDir(), "ai-team-editor-")

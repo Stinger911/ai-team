@@ -28,7 +28,7 @@ func TestExecuteRole_Basic(t *testing.T) {
 			Model: "gemini-2.5-flash",
 		},
 	}
-	output, err := ExecuteRole(role, input, mockCfg, "")
+	output, err := ExecuteRole(role, input, &mockCfg, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestExecuteChain_AnalysisDesign_StopsOnWriteFile(t *testing.T) {
 		},
 	}
 
-	ctx, err := ExecuteChain(chain, map[string]interface{}{"initial_problem": "x"}, mockCfg, "")
+	ctx, err := ExecuteChain(chain, map[string]interface{}{"initial_problem": "x"}, &mockCfg, "")
 	if err != nil {
 		t.Fatalf("ExecuteChain returned error: %v", err)
 	}

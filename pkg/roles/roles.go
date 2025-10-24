@@ -20,7 +20,7 @@ import (
 func ExecuteRole(
 	role types.Role,
 	input map[string]interface{},
-	cfg config.Config,
+	cfg *config.Config,
 	logFilePath string, // Add logFilePath parameter
 ) (string, error) {
 	// Render the prompt with the provided input
@@ -43,57 +43,67 @@ func ExecuteRole(
 	var response string
 	var roleErr error
 
-	// Debug: print available Gemini model keys, full map, and requested model name
-	logger.DebugPrintf("Gemini models available: %v", keys(cfg.Gemini.Models))
-	logger.DebugPrintf("Gemini models map: %#v", cfg.Gemini.Models)
-	logger.DebugPrintf("Requested Gemini model: '%s'", role.Model)
-	// Try Gemini
-	if modelCfg, ok := cfg.Gemini.Models[role.Model]; ok {
-		apiKey := modelCfg.Apikey
-		if apiKey == "" {
-			apiKey = cfg.Gemini.Apikey
+	switch role.Provider {
+	case "gemini":
+		if modelCfg, ok := cfg.Gemini.Models[role.Model]; ok {
+			apiKey := modelCfg.Apikey
+			if apiKey == "" {
+				apiKey = cfg.Gemini.Apikey
+			}
+			apiURL := modelCfg.Apiurl
+			if apiURL == "" {
+				apiURL = cfg.Gemini.Apiurl
+			}
+			response, roleErr = ai.CallGeminiFunc(
+				client,
+				processedPrompt.String(),
+				modelCfg.Model,
+				apiURL,
+				apiKey,
+				cfg.Tools,
+			)
+		} else {
+			return "", errors.New(errors.ErrCodeRole, fmt.Sprintf("Gemini model '%s' not found in config", role.Model), nil)
 		}
-		apiURL := modelCfg.Apiurl
-		if apiURL == "" {
-			apiURL = cfg.Gemini.Apiurl
+	case "openai":
+		logger.DebugPrintf("Looking for OpenAI model %q in map with keys: %q", role.Model, keys(cfg.OpenAI.Models))
+		if modelCfg, ok := cfg.OpenAI.Models[role.Model]; ok {
+			logger.DebugPrintf("OpenAI model '%s' found: %t", role.Model, ok)
+			apiKey := modelCfg.Apikey
+			if apiKey == "" {
+				apiKey = cfg.OpenAI.Apikey
+			}
+			apiURL := modelCfg.Apiurl
+			if apiURL == "" {
+				apiURL = cfg.OpenAI.DefaultApiurl
+			}
+			response, roleErr = ai.CallOpenAIFunc(
+				client,
+				processedPrompt.String(),
+				apiURL,
+				apiKey,
+			)
+		} else {
+			return "", errors.New(errors.ErrCodeRole, fmt.Sprintf("OpenAI model '%s' not found in config", role.Model), nil)
 		}
-		response, roleErr = ai.CallGeminiFunc(
-			client,
-			processedPrompt.String(),
-			modelCfg.Model,
-			apiURL,
-			apiKey,
-			cfg.Tools,
-		)
-	} else if modelCfg, ok := cfg.OpenAI.Models[role.Model]; ok {
-		apiKey := modelCfg.Apikey
-		if apiKey == "" {
-			apiKey = cfg.OpenAI.Apikey
+	case "ollama":
+		if modelCfg, ok := cfg.Ollama.Models[role.Model]; ok {
+			apiURL := modelCfg.Apiurl
+			if apiURL == "" {
+				apiURL = cfg.Ollama.Apiurl
+			}
+			response, roleErr = ai.CallOllama(
+				client,
+				processedPrompt.String(),
+				apiURL,
+				modelCfg.Model,
+				cfg.Tools,
+			)
+		} else {
+			return "", errors.New(errors.ErrCodeRole, fmt.Sprintf("Ollama model '%s' not found in config", role.Model), nil)
 		}
-		apiURL := modelCfg.Apiurl
-		if apiURL == "" {
-			apiURL = cfg.OpenAI.DefaultApiurl
-		}
-		response, roleErr = ai.CallOpenAI(
-			client,
-			processedPrompt.String(),
-			apiURL,
-			apiKey,
-		)
-	} else if modelCfg, ok := cfg.Ollama.Models[role.Model]; ok {
-		apiURL := modelCfg.Apiurl
-		if apiURL == "" {
-			apiURL = cfg.Ollama.Apiurl
-		}
-		response, roleErr = ai.CallOllama(
-			client,
-			processedPrompt.String(),
-			apiURL,
-			modelCfg.Model,
-			cfg.Tools,
-		)
-	} else {
-		return "", errors.New(errors.ErrCodeRole, fmt.Sprintf("unsupported or undefined model '%s' in role", role.Model), nil)
+	default:
+		return "", errors.New(errors.ErrCodeRole, fmt.Sprintf("unsupported or undefined provider '%s' for model '%s'", role.Provider, role.Model), nil)
 	}
 
 	// Log the role call
@@ -135,7 +145,7 @@ func ExecuteRole(
 func ExecuteChain(
 	chain types.RoleChain,
 	initialInput map[string]interface{},
-	cfg config.Config,
+	cfg *config.Config,
 	logFilePath string, // Add logFilePath parameter
 ) (map[string]interface{}, error) {
 	roles := cfg.Roles

@@ -46,11 +46,17 @@ func LoadConfig(configPath string) (Config, error) {
 	if configPath != "" {
 		viper.SetConfigFile(configPath)
 		viper.SetConfigType("yaml")
+		if err := viper.ReadInConfig(); err != nil {
+			return Config{}, errors.New(errors.ErrCodeConfig, "failed to read config file: "+viper.ConfigFileUsed(), err)
+		}
 	} else {
 		viper.SetConfigName("config")
 		viper.SetConfigType("yaml")
 		viper.AddConfigPath(".")
 		viper.AddConfigPath("$HOME/.ai-team")
+		if err := viper.ReadInConfig(); err != nil {
+			return Config{}, errors.New(errors.ErrCodeConfig, "failed to read config file: "+viper.ConfigFileUsed(), err)
+		}
 	}
 
 	viper.AutomaticEnv() // Allow env var overrides
@@ -60,10 +66,6 @@ func LoadConfig(configPath string) (Config, error) {
 	viper.SetDefault("LogStdout", true)
 	viper.SetDefault("Ollama.APIURL", "http://localhost:11434")
 	// ...add more defaults as needed...
-
-	if err := viper.ReadInConfig(); err != nil {
-		return Config{}, errors.New(errors.ErrCodeConfig, "failed to read config file: "+viper.ConfigFileUsed(), err)
-	}
 
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {

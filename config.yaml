@@ -3,6 +3,10 @@ openai:
   default_apiurl: "https://api.openai.com/v1" # Default Provider-level URL
   apikey: "YOUR_OPENAI_API_KEY" # Default Provider-level API key (can be overridden in model config)
   models:
+    gpt-3: # Placeholder for gpt-3
+      model: gpt-3 # Placeholder model name
+      temperature: 0.7
+      max_tokens: 1000
     gpt-3.5-turbo-cloud: # Model name (unique identifier)
       model: gpt-3.5-turbo
       temperature: 0.7
@@ -24,12 +28,14 @@ gemini:
   apiurl: "https://generativeai.googleapis.com/v1" # Provider-level URL
   models:
     gemini-pro-standard: # Model name (unique identifier)
-      model: models/gemini-pro
+      model: gemini-pro
       temperature: 0.9
+      max_tokens: 1000
     gemini-pro-creative: # Model name (unique identifier)
-      model: models/gemini-pro
+      model: gemini-pro
       temperature: 1.0
       top_p: 0.9
+      max_tokens: 1000
 
 ollama:
   apiurl: "http://localhost:11434" # Provider-level URL
@@ -42,6 +48,7 @@ ollama:
 tools:
   - name: "write_file"
     description: "Writes content to a specified file."
+    command_template: "echo \"write_file\""
     arguments:
       - name: "filePath"
         type: "string"
@@ -51,12 +58,14 @@ tools:
         description: "Content to write."
   - name: "run_command"
     description: "Executes a shell command."
+    command_template: "echo \"run_command\""
     arguments:
       - name: "command"
         type: "string"
         description: "Shell command to execute."
   - name: "apply_patch"
     description: "Applies a patch to a file."
+    command_template: "echo \"apply_patch\""
     arguments:
       - name: "filePath"
         type: "string"
@@ -78,8 +87,8 @@ roles:
     model_name: gemini-pro-creative
     prompt: "Write documentation for {{.task}}"
   architect:
-    model_provider: gemini
-    model_name: gemini-pro
+    model_provider: openai
+    model_name: gpt-3.5-turbo-local
     prompt: |
       You are an architect. Your task is to design a solution for
       the following problem: {{.problem}}. Output your design as a

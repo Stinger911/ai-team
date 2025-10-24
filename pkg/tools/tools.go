@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -12,6 +13,26 @@ import (
 
 	"ai-team/pkg/errors"
 )
+
+// BackupFile creates a backup of a file.
+func BackupFile(filePath string) (string, error) {
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return "", nil // No backup needed if file doesn't exist
+	}
+
+	backupPath := filePath + ".bak"
+	input, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	err = ioutil.WriteFile(backupPath, input, 0644)
+	if err != nil {
+		return "", err
+	}
+
+	return backupPath, nil
+}
 
 // ToolExecutor executes ToolCalls using a ToolRegistry.
 type ToolExecutor struct {

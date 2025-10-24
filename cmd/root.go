@@ -33,7 +33,8 @@ var runChainCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1), // Expect exactly one argument: the chain name
 	Run: func(cmd *cobra.Command, args []string) {
 		var err error
-		cfg, err = config.LoadConfig(cfgFile)
+		fmt.Printf("cfgFile in runChainCmd: %s\n", cfgFile)
+		localCfg, err := config.LoadConfig(cfgFile) // Load config locally
 		if err != nil {
 			HandleError(err)
 		}
@@ -41,7 +42,7 @@ var runChainCmd = &cobra.Command{
 		// Determine log file path (flag takes precedence)
 		logFilePath := logFileFlag
 		if logFilePath == "" {
-			logFilePath = cfg.LogFilePath
+			logFilePath = localCfg.LogFilePath
 		}
 		if logFilePath != "" {
 			// Open log file for append
@@ -52,7 +53,7 @@ var runChainCmd = &cobra.Command{
 				os.Exit(1)
 			}
 			// Multi-writer: file + stdout if LogStdout is true
-			if cfg.LogStdout {
+			if localCfg.LogStdout {
 				logrus.SetOutput(io.MultiWriter(os.Stdout, logFile))
 			} else {
 				logrus.SetOutput(logFile)
@@ -63,7 +64,7 @@ var runChainCmd = &cobra.Command{
 		inputStr, _ := cmd.Flags().GetString("input")
 
 		// Find the specified chain (map lookup)
-		targetChain, foundChain := cfg.Chains[chainName]
+		targetChain, foundChain := localCfg.Chains[chainName]
 		if !foundChain {
 			HandleError(errors.New(errors.ErrCodeRole, fmt.Sprintf("role chain '%s' not found in config", chainName), nil))
 		}
@@ -81,13 +82,13 @@ var runChainCmd = &cobra.Command{
 		}
 
 		// Prefer flag over config
-		logFilePath = cfg.LogFilePath
+		logFilePath = localCfg.LogFilePath
 
 		var result map[string]interface{}
 		result, err = roles.ExecuteChain(
 			targetChain,
 			initialInput,
-			cfg,
+			&localCfg,
 			logFilePath, // Pass logFilePath
 		)
 		if err != nil {
@@ -102,6 +103,7 @@ var runChainCmd = &cobra.Command{
 }
 
 func init() {
+	logrus.SetLevel(logrus.DebugLevel)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.ai-team.yaml)")
 	runChainCmd.Flags().String("input", "", "Initial input for the chain (e.g., 'problem=design a new feature')")
 	runChainCmd.Flags().StringVar(&logFileFlag, "logFile", "", "Path to a file to log role calls (e.g., 'role_calls.log') (flag takes precedence over config)")

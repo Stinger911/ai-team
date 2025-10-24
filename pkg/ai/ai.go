@@ -62,6 +62,9 @@ func (c *OllamaClient) ChatCompletion(task string) (string, error) {
 // CallGeminiFunc allows mocking of CallGemini in tests
 var CallGeminiFunc = CallGemini
 
+// CallOpenAIFunc allows mocking of CallOpenAI in tests
+var CallOpenAIFunc = CallOpenAI
+
 func CallOpenAI(client *http.Client, task string, apiURL string, apiKey string) (string, error) {
 	logrus.Info("Calling OpenAI API...")
 	// Construct a simple request body (keep it flexible -- callers can pass a provider-specific apiURL)
@@ -112,7 +115,7 @@ func CallGemini(client *http.Client, task string, model string, apiURL string, a
 	logrus.Infof("Calling Gemini API with model: %s", model)
 
 	// Construct the full API URL with the model
-	fullAPIURL := fmt.Sprintf("%s/v1/models/%s:generateContent", apiURL, model)
+	fullAPIURL := fmt.Sprintf("%s/models/%s:generateContent", apiURL, model)
 
 	// Escape the task string for JSON
 	request := types.GeminiRequest{
