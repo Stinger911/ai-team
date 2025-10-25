@@ -12,6 +12,8 @@ import (
 	"ai-team/pkg/ai"
 	"net/http"
 
+	"ai-team/pkg/types"
+
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -43,7 +45,7 @@ func simulateInput(input string) *bytes.Buffer {
 
 func getProjectRoot() string {
 	_, b, _, _ := runtime.Caller(0)
-	basepath := filepath.Dir(b) // This is pkg/roles
+	basepath := filepath.Dir(b)                // This is pkg/roles
 	return filepath.Join(basepath, "..", "..") // This should be the project root
 }
 
@@ -52,19 +54,21 @@ func TestRoleCommand_CLI(t *testing.T) {
 		t.Skip("ai-team binary not found; skipping integration test")
 	}
 
-	// Mock ai.CallOpenAIFunc
-	oldCallOpenAIFunc := ai.CallOpenAIFunc
-	ai.CallOpenAIFunc = func(client *http.Client, task string, apiURL string, apiKey string) (string, error) {
-		return "Mocked OpenAI Response", nil
+	// Mock ai.CallGeminiFunc
+	oldCallGeminiFunc := ai.CallGeminiFunc
+	ai.CallGeminiFunc = func(client *http.Client, prompt, model, apiURL, apiKey string, tools []types.ConfigurableTool) (string, error) {
+		return "Mocked Gemini Response", nil
 	}
 	defer func() {
-		ai.CallOpenAIFunc = oldCallOpenAIFunc
+		ai.CallGeminiFunc = oldCallGeminiFunc
 	}()
 
 	projectRoot := getProjectRoot()
 	configPath := filepath.Join(projectRoot, "config.yaml")
 	t.Logf("Config path: %s", configPath)
 	cmd := exec.Command(filepath.Join(projectRoot, "ai-team"), "role", "architect", "--config", configPath, "problem=add two numbers")
+	cmd.Dir = projectRoot
+	cmd.Env = append(os.Environ(), "AI_TEAM_DEBUG=1")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("role command failed: %v\nOutput: %s", err, string(output))
@@ -81,6 +85,7 @@ func TestRunChainCommand_CLI(t *testing.T) {
 	projectRoot := getProjectRoot()
 	configPath := filepath.Join(projectRoot, "config.yaml")
 	cmd := exec.Command(filepath.Join(projectRoot, "ai-team"), "run-chain", "design-code-test", "--config", configPath)
+	cmd.Dir = projectRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("run-chain command failed: %v\nOutput: %s", err, string(output))
@@ -101,6 +106,7 @@ func TestRoleCommand_InteractiveCLI_Abort(t *testing.T) {
 	projectRoot := getProjectRoot()
 	configPath := filepath.Join(projectRoot, "config.yaml")
 	cmd := exec.Command(filepath.Join(projectRoot, "ai-team"), "role", "--interactive", "--config", configPath)
+	cmd.Dir = projectRoot
 	cmd.Stdin = input
 	var out bytes.Buffer
 	cmd.Stdout = &out

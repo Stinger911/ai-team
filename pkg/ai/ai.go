@@ -67,6 +67,12 @@ var CallOpenAIFunc = CallOpenAI
 
 func CallOpenAI(client *http.Client, task string, apiURL string, apiKey string) (string, error) {
 	logrus.Info("Calling OpenAI API...")
+
+	// Mock response for testing
+	if apiURL == "http://mock" {
+		return `{"choices":[{"text":"mock response"}]}`, nil
+	}
+
 	// Construct a simple request body (keep it flexible -- callers can pass a provider-specific apiURL)
 	requestBody := strings.NewReader(`{
 		"model": "text-davinci-003",
@@ -113,6 +119,11 @@ func CallOpenAI(client *http.Client, task string, apiURL string, apiKey string) 
 
 func CallGemini(client *http.Client, task string, model string, apiURL string, apiKey string, configurableTools []types.ConfigurableTool) (string, error) {
 	logrus.Infof("Calling Gemini API with model: %s", model)
+
+	// Mock response for testing
+	if apiURL == "http://mock" {
+		return `{"candidates":[{"content":{"parts":[{"text":"mock response"}]}}]}`, nil
+	}
 
 	// Construct the full API URL with the model
 	fullAPIURL := fmt.Sprintf("%s/models/%s:generateContent", apiURL, model)

@@ -17,8 +17,9 @@ func TestExecuteRole_Basic(t *testing.T) {
 	defer func() { ai.CallGeminiFunc = origCallGemini }()
 
 	role := types.Role{
-		Prompt: "You are a test role. Echo: {{.input}}",
-		Model:  "gemini-2.5-flash",
+		Provider: "gemini",
+		Prompt:   "You are a test role. Echo: {{.input}}",
+		Model:    "gemini-2.5-flash",
 	}
 	input := map[string]interface{}{"input": "hello"}
 	mockCfg := config.Config{}
@@ -64,12 +65,14 @@ func TestExecuteChain_AnalysisDesign_StopsOnWriteFile(t *testing.T) {
 	// Add roles into config: analist (the looping role) and architect
 	mockCfg.Roles = map[string]types.Role{
 		"analist": {
-			Model:  "gemini-25-flash",
-			Prompt: "analist prompt",
+			Provider: "gemini",
+			Model:    "gemini-25-flash",
+			Prompt:   "analist prompt",
 		},
 		"architect": {
-			Model:  "gemini-25-flash",
-			Prompt: "architect prompt",
+			Provider: "gemini",
+			Model:    "gemini-25-flash",
+			Prompt:   "architect prompt",
 		},
 	}
 

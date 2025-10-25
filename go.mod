@@ -2,9 +2,12 @@ module ai-team
 
 go 1.23.0
 
-toolchain go1.24.7
+toolchain go1.23.12
+
+// toolchain go1.24.7
 
 require (
+	github.com/c-bata/go-prompt v0.2.6
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
@@ -12,7 +15,6 @@ require (
 )
 
 require (
-	github.com/c-bata/go-prompt v0.2.6 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

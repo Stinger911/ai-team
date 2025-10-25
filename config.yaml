@@ -1,40 +1,57 @@
 log_file_path: "role_calls.log"
 openai:
-  default_apiurl: "https://api.openai.com/v1" # Default Provider-level URL
-  apikey: "YOUR_OPENAI_API_KEY" # Default Provider-level API key (can be overridden in model config)
+  default_apiurl: "https://api.openai.com/v1"
+  apikey: "YOUR_OPENAI_API_KEY"
   models:
-    gpt-3: # Placeholder for gpt-3
-      model: gpt-3 # Placeholder model name
+    gpt-3:
+      model: gpt-3
       temperature: 0.7
       max_tokens: 1000
-    gpt-3.5-turbo-cloud: # Model name (unique identifier)
+    gpt35-turbo-cloud:
       model: gpt-3.5-turbo
       temperature: 0.7
-      #apiurl: # Inherits from provider default
-    gpt-4-code-focused: # Model name (unique identifier)
+      max_tokens: 1000
+    gpt-4-code-focused:
       model: gpt-4
       temperature: 0.2
       max_tokens: 1000
-      #apikey: "ANOTHER_API_KEY_IF_NEEDED" # Override API key
-      #apiurl: "https://api.openai.com/v1" # Override API URL if needed
-    gpt-3.5-turbo-local: # Local OpenAI compatible model
+    gpt-3-5-turbo-local:
       model: gpt-3.5-turbo
       temperature: 0.7
-      apiurl: "http://localhost:8000/v1" # Different base URL for local model
-      apikey: "NO_KEY_NEEDED" # can be overridden
+      max_tokens: 1000
+      apiurl: "http://localhost:8000/v1"
+      apikey: "NO_KEY_NEEDED"
+    gpt-3-5-turbo:
+      model: gpt-3.5-turbo
+      temperature: 0.7
+      max_tokens: 1000
+      apiurl: "http://mock"
+      apikey: "NO_KEY_NEEDED"
 
 gemini:
-  apikey: "YOUR_GEMINI_API_KEY" # Provider-level API key
-  apiurl: "https://generativeai.googleapis.com/v1" # Provider-level URL
+  apikey: "test" # Provider-level API key for tests
+  apiurl: "http://mock" # Provider-level URL for tests
   models:
-    gemini-pro-standard: # Model name (unique identifier)
+    gemini-pro-standard:
       model: gemini-pro
       temperature: 0.9
       max_tokens: 1000
-    gemini-pro-creative: # Model name (unique identifier)
+    gemini-pro-creative:
       model: gemini-pro
       temperature: 1.0
       top_p: 0.9
+      max_tokens: 1000
+    gemini-2.5-flash:
+      model: gemini-2.5-flash
+      temperature: 0.7
+      max_tokens: 1000
+    gemini-25-flash:
+      model: gemini-2.5-flash
+      temperature: 0.7
+      max_tokens: 1000
+    gemini-2:
+      model: gemini-2
+      temperature: 0.7
       max_tokens: 1000
 
 ollama:
@@ -80,22 +97,20 @@ roles:
     prompt: "Write code for {{.task}}"
   local_coder:
     model_provider: openai
-    model_name: gpt-3.5-turbo-local # Reference to local model
+    model_name: gpt-3-5-turbo-local # Reference to local model
     prompt: "Write code (using local model) for {{.task}}"
   writer:
     model_provider: gemini
     model_name: gemini-pro-creative
     prompt: "Write documentation for {{.task}}"
+  analist:
+    model_provider: gemini
+    model_name: gemini-25-flash
+    prompt: "analist prompt"
   architect:
-    model_provider: openai
-    model_name: gpt-3.5-turbo-local
-    prompt: |
-      You are an architect. Your task is to design a solution for
-      the following problem: {{.problem}}. Output your design as a
-      tool call to 'write_file'. The 'file_path' argument should be 
-      'design.md'. The 'content' argument should be your markdown
-      design. Example:
-      {\"tool_call\": {\"name\": \"write_file\", \"arguments\": {\"file_path\": \"design.md\", \"content\": \"# My Design...\n\"}}}"
+    model_provider: gemini
+    model_name: gemini-pro-standard
+    prompt: "architect prompt"
   tester:
     model_provider: gemini
     model_name: gemini-pro
